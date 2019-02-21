@@ -1,3 +1,5 @@
 */target
 **/*.rs.bk
 pars-test/Cargo.lock
+**/.*.swp
+
