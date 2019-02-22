@@ -1,0 +1,6 @@
+[workspace]
+members = [
+"pars",
+"pars-derive",
+"pars-test",
+]

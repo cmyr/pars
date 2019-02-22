@@ -6,6 +6,6 @@ edition = "2018"
 
 [dependencies]
 
-[dependencies.pars-derive]
-path = "../pars-derive"
+[dependencies.pars]
+path = "../pars"
 
