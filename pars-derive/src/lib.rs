@@ -10,23 +10,8 @@ use syn::{Ident, Lit, Meta, MetaNameValue};
 #[proc_macro_derive(ParsFromStr, attributes(pars))]
 pub fn pars_from_str(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let ast: syn::DeriveInput = syn::parse(tokens).unwrap();
+    let pars_fmt = extract_meta(&ast);
 
-    let mut pars_fmt = None;
-    for option in ast.attrs.into_iter() {
-        let option = option.parse_meta().unwrap();
-        match option {
-            // Match `#[ident = lit]` attributes.  Match guard makes it `#[prefix = lit]`
-            Meta::NameValue(MetaNameValue {
-                ref ident, ref lit, ..
-            }) if ident == "pars" => {
-                if let Lit::Str(lit) = lit {
-                    pars_fmt = Some(lit.value());
-                } // else return some type error
-            }
-            _ => (),
-            // other => eprintln!("other attr {:?}", other),
-        }
-    }
     let pars_fmt = pars_fmt.expect("you must provide a format string attribute.");
 
     let (variables, nonvariables) = parse_vars(&pars_fmt);
@@ -82,6 +67,28 @@ pub fn pars_from_str(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream
         }
     };
     gen.into()
+}
+
+/// Returns
+fn extract_meta(ast: &syn::DeriveInput) -> Option<String> {
+    let mut pars_fmt = None;
+    for option in ast.attrs.iter() {
+        let option = option.parse_meta().unwrap();
+        match option {
+            // Match `#[ident = lit]` attributes.  Match guard makes it `#[prefix = lit]`
+            Meta::NameValue(MetaNameValue {
+                ref ident, ref lit, ..
+            }) if ident == "pars" => {
+                if let Lit::Str(lit) = lit {
+                    pars_fmt = Some(lit.value());
+                } // else return some type error
+            }
+            _ => (),
+            // other => eprintln!("other attr {:?}", other),
+        }
+    }
+
+    pars_fmt
 }
 
 /// Returns (variable names, nonvariable strings).
@@ -149,5 +156,18 @@ mod tests {
                 vec!["", "& ", "* ", ":", ""]
             )
         );
+    }
+
+    #[test]
+    fn extract_meta_simple() {
+        let ast = syn::parse(
+            quote! {
+                #[pars = "hi"]
+                struct foo {}
+            }
+            .into(),
+        )
+        .unwrap();
+        assert_eq!(Some("hi".into()), extract_meta(&ast));
     }
 }
