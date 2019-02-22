@@ -43,6 +43,7 @@ extern crate quote;
 
 use proc_macro2::{Span, TokenStream};
 use std::vec::Vec;
+use std::collections::HashMap;
 use syn::{Ident, Lit, Meta, MetaNameValue};
 
 #[proc_macro_derive(ParsFromStr, attributes(pars))]
@@ -105,6 +106,41 @@ pub fn pars_from_str(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream
         }
     };
     gen.into()
+}
+
+/// Macro operating modes, parsed from macro attributes.
+enum Mode {
+    Fmt(String),
+    Regex { pattern: String, group_order: Option<Vec<String>> },
+}
+
+const META_RE: &str = "pars::re";
+const META_FMT: &str = "pars::fmt";
+
+fn extract_meta2(ast: &syn::DeriveInput) -> Result<Mode, String> {
+    let mut all_args = ast.attrs.iter()
+        .flat_map(|a| a.parse_meta())
+        .flat_map(|meta_attr| match meta_attr {
+            Meta::NameValue(MetaNameValue {ident, lit, ..}) => Some((ident.to_string(), lit)),
+            _ => None
+        })
+    .collect::<HashMap<_,_>>();
+
+    if all_args.contains_key(META_FMT) && all_args.contains_key(META_RE) {
+        Err("Only one of #[pars::fmt] or #[pars::re] can be provided.".into())
+    } else if let Some(lit) = all_args.remove(META_RE) {
+        match lit {
+            Lit::Str(s) => Ok(Mode::Regex { pattern: s.value(), group_order: None }),
+            _other => Err("pars::re failed, expected str found... something else".into()),
+        }
+    } else if let Some(lit) = all_args.remove(META_FMT) {
+        match lit {
+            Lit::Str(s) => Ok(Mode::Fmt(s.value())),
+            _other => Err("pars::fmt failed, expected str found... something else".into()),
+        }
+    } else {
+        Err("`#[derive(ParsFromStr)]` requires one of `#[pars::fmt]` or #[pars::re].".into())
+    }
 }
 
 /// Returns
