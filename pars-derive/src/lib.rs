@@ -1,3 +1,41 @@
+//! A library for deriving simple FromStr implementations.
+//!
+//! This library provides adds a new trait, `ParsFromStr`, which
+//! functions like the `FromStr` trait in the standard library.
+//!
+//! This trait can be derived in two ways: either with _very_ naive
+//! fmt-like pattern matching, or by specifying a regex.
+//!
+//! # Examples
+//!
+//! ## Naive pattern variant
+//!
+//! Given input like "home: (56.43, -13.23)"
+//!
+//! ```ignore
+//! #[derive(ParsFromStr)]
+//! #[pars::fmt = "#name: (#x, #y)" ]
+//! struct NamedPosition {
+//!     name: String,
+//!     x: f64,
+//!     y: f64,
+//! }
+//! ```
+//!
+//! ## Regex variant
+//!
+//! Given input like "home: (56.43, -13.23)"
+//!
+//! ```ignore
+//! #[derive(ParsFromStr)]
+//! #[pars::re = "(\w+): \((.*), (.*)\)"]
+//! struct NamedPosition {
+//!     name: String,
+//!     x: f64,
+//!     y: f64,
+//! }
+//! ```
+
 extern crate proc_macro;
 extern crate syn;
 #[macro_use]
