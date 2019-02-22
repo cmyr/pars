@@ -13,8 +13,7 @@
 //! Given input like "home: (56.43, -13.23)"
 //!
 //! ```ignore
-//! #[derive(ParsFromStr)]
-//! #[pars::fmt = "#name: (#x, #y)" ]
+//! #[pars(fmt"#name: (#x, #y)")]
 //! struct NamedPosition {
 //!     name: String,
 //!     x: f64,
@@ -27,8 +26,7 @@
 //! Given input like "home: (56.43, -13.23)"
 //!
 //! ```ignore
-//! #[derive(ParsFromStr)]
-//! #[pars::re = "(\w+): \((.*), (.*)\)"]
+//! #[pars::re(r"(\w+): \((.*), (.*)\)")]
 //! struct NamedPosition {
 //!     name: String,
 //!     x: f64,
@@ -41,17 +39,62 @@ extern crate syn;
 #[macro_use]
 extern crate quote;
 
+use proc_macro::TokenStream as TokenStream1;
 use proc_macro2::{Span, TokenStream};
 use std::vec::Vec;
 use std::collections::HashMap;
 use syn::{Ident, Lit, Meta, MetaNameValue};
 
+#[proc_macro_attribute]
+pub fn re(attr: TokenStream1, tokens: TokenStream1) -> TokenStream1 {
+    //let mut result = attr.clone();
+    //[attr, tokens].iter().cloned().collect()
+    //attr.append(tokens)
+
+    //eprintln!("re attr: {:?}", &attr);
+    //eprintln!("re tokens: {:?}", &tokens);
+
+    let ast: syn::DeriveInput = syn::parse(tokens.clone()).unwrap();
+    ensure_no_extra_attrs(&ast.attrs);
+    //eprintln!("re attrs: {:?}", ast.attrs);
+    unimplemented!();
+
+}
+
+#[proc_macro_attribute]
+pub fn fmt(attr: TokenStream1, tokens: TokenStream1) -> TokenStream1 {
+    eprintln!("fmt attr: {:?}", &attr);
+    eprintln!("fmt tokens: {:?}", &tokens);
+
+    let ast: syn::DeriveInput = syn::parse(tokens).unwrap();
+    ensure_no_extra_attrs(&ast.attrs);
+    eprintln!("token attrs: {:?}", ast.attrs);
+    TokenStream1::new()
+}
+
+//TODO: Fancy panics with the span of 'a'
+fn ensure_no_extra_attrs(attrs: &[syn::Attribute]) {
+    attrs.iter().for_each(|a| {
+        if let Some(seg) = a.path.segments.first() {
+            if seg.into_value().ident == Ident::new("pars", Span::call_site()) {
+                panic!("Only one pars:: macro attribute may be used for a \
+                        given type.");
+            }
+        }
+    })
+}
+
 #[proc_macro_derive(ParsFromStr, attributes(pars))]
 pub fn pars_from_str(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let ast: syn::DeriveInput = syn::parse(tokens).unwrap();
-    let pars_fmt = extract_meta(&ast);
-
-    let pars_fmt = pars_fmt.expect("you must provide a format string attribute.");
+    let pars_fmt = match extract_meta2(&ast) {
+        Ok(Mode::Fmt(s)) => s,
+        Ok(Mode::Regex { .. }) => {
+            eprintln!("pars::re doesn't actually do anything yet");
+            return proc_macro::TokenStream::new();
+        }
+        Err(e) => panic!("{}", e),
+    };
 
     let (variables, nonvariables) = parse_vars(&pars_fmt);
     let struct_ident = ast.ident;
@@ -119,12 +162,25 @@ const META_FMT: &str = "pars::fmt";
 
 fn extract_meta2(ast: &syn::DeriveInput) -> Result<Mode, String> {
     let mut all_args = ast.attrs.iter()
+        .inspect(|a| eprintln!("{:?}", a.path))
         .flat_map(|a| a.parse_meta())
         .flat_map(|meta_attr| match meta_attr {
-            Meta::NameValue(MetaNameValue {ident, lit, ..}) => Some((ident.to_string(), lit)),
+            Meta::List(l) => {
+                eprintln!("list {:?}", l);
+                None
+            }
+            Meta::Word(w) => {
+                eprintln!("word {:?}", w);
+                None
+            }
+            Meta::NameValue(MetaNameValue {ident, lit, ..}) => {
+                eprintln!("nameval {:?}: {:?}", &ident, &lit );
+                Some((ident.to_string(), lit))
+            }
             _ => None
         })
     .collect::<HashMap<_,_>>();
+    println!("all args: {:?}", &all_args.keys().collect::<Vec<_>>());
 
     if all_args.contains_key(META_FMT) && all_args.contains_key(META_RE) {
         Err("Only one of #[pars::fmt] or #[pars::re] can be provided.".into())
