@@ -8,8 +8,7 @@ use pars;
     //y: isize,
 //}
 
-#[pars::re(r"(\w+): \(([+-\d]+), ([+-\d]_)\)")]
-#[pars::fmt("$name: ($x, $y)")]
+#[pars::re(r"(\w+): \(([+\-\d]+), ([+\-\d]+)\)")]
 #[derive(Debug, PartialEq)]
 struct NamedPos2 {
     name: String,
@@ -23,7 +22,13 @@ fn main() {
     //assert_eq!(named_pos.y, 4);
     //assert_eq!(named_pos.name, "someone");
     //println!("we got {:?}", named_pos);
-    println!("hi!")
+    let named_pos = NamedPos2::pars_from_str("hello: (32, -420)").unwrap();
+    assert_eq!(named_pos,
+               NamedPos2 {
+                   name: "hello".into(),
+                   x: 32,
+                   y: -420,
+               });
 }
 
 #[cfg(test)]

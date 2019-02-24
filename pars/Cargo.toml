@@ -4,6 +4,9 @@ version = "0.1.0"
 authors = ["Colin Rofls <colin@cmyr.net>", "Galen O'Sullivan <galenosullivan@gmail.com>"]
 edition = "2018"
 
+[dependencies]
+regex = "1.0"
+
 [dependencies.pars-derive]
 path = "../pars-derive"
 

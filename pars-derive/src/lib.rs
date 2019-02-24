@@ -13,7 +13,7 @@
 //! Given input like "home: (56.43, -13.23)"
 //!
 //! ```ignore
-//! #[pars(fmt"#name: (#x, #y)")]
+//! #[pars::fmt("#name: (#x, #y)")]
 //! struct NamedPosition {
 //!     name: String,
 //!     x: f64,
@@ -35,6 +35,7 @@
 //! ```
 
 extern crate proc_macro;
+#[macro_use]
 extern crate syn;
 #[macro_use]
 extern crate quote;
@@ -43,32 +44,70 @@ use proc_macro::TokenStream as TokenStream1;
 use proc_macro2::{Span, TokenStream};
 use std::vec::Vec;
 use std::collections::HashMap;
-use syn::{Ident, Lit, Meta, MetaNameValue};
+use syn::{Ident, Item, ItemStruct, ItemEnum, Lit, Meta, MetaNameValue, NestedMeta, AttributeArgs};
+
 
 #[proc_macro_attribute]
 pub fn re(attr: TokenStream1, tokens: TokenStream1) -> TokenStream1 {
-    //let mut result = attr.clone();
-    //[attr, tokens].iter().cloned().collect()
-    //attr.append(tokens)
+    //ensure_no_extra_attrs(&ast.attrs);
+    let args = parse_macro_input!(attr as AttributeArgs);
+    let re_string = get_attr_string(args);
+    let item = parse_macro_input!(tokens as Item);
+    match item {
+        Item::Struct(item) => gen_re_struct(re_string, item),
+        Item::Enum(item) => gen_re_enum(re_string, item),
+        _other => panic!("pars::re only supports structs and enums"),
+    }
+}
 
-    //eprintln!("re attr: {:?}", &attr);
-    //eprintln!("re tokens: {:?}", &tokens);
+fn gen_re_struct(re_string: String, item: ItemStruct) -> TokenStream1 {
 
-    let ast: syn::DeriveInput = syn::parse(tokens.clone()).unwrap();
-    ensure_no_extra_attrs(&ast.attrs);
-    //eprintln!("re attrs: {:?}", ast.attrs);
-    unimplemented!();
+    let mut struct_init_body = TokenStream::new();
+    for (i, field) in item.fields.iter().enumerate() {
+        let field_name = field.ident.clone().expect("named struct fields only sowwwy");
+        let parsed_field = quote! {
+            #field_name: caps.get(#i + 1)
+            .map(|s| s.as_str().parse().map_err(|_| "parse failed"))
+            .ok_or("missing field")??,
+        };
+        struct_init_body.extend(parsed_field);
+    }
 
+    let struct_name = item.ident.clone();
+
+    //FIXME: static regex or something, at least don't be compiling in the parse fn
+    let gen: TokenStream1 = quote! {
+        #item
+
+        impl #struct_name {
+            fn pars_from_str(s: &str) -> Result<#struct_name, &'static str> {
+                let pat = pars::regex_new(#re_string).unwrap();
+                //.map_err(|_| "couldn't compile regex, \
+                //which honsetly why are we doing this at the call site?")?;
+                let caps = pat.captures(s).ok_or("failed to match input")?;
+                Ok(
+                    #struct_name {
+                        #struct_init_body
+                    }
+                )
+            }
+        }
+    }.into();
+    gen
+}
+
+fn gen_re_enum(_re_string: String, _item: ItemEnum) -> TokenStream1 {
+    unimplemented!("enum not supported");
 }
 
 #[proc_macro_attribute]
-pub fn fmt(attr: TokenStream1, tokens: TokenStream1) -> TokenStream1 {
-    eprintln!("fmt attr: {:?}", &attr);
-    eprintln!("fmt tokens: {:?}", &tokens);
+pub fn fmt(_attr: TokenStream1, _tokens: TokenStream1) -> TokenStream1 {
+    //eprintln!("fmt attr: {:?}", &attr);
+    //eprintln!("fmt tokens: {:?}", &tokens);
 
-    let ast: syn::DeriveInput = syn::parse(tokens).unwrap();
-    ensure_no_extra_attrs(&ast.attrs);
-    eprintln!("token attrs: {:?}", ast.attrs);
+    //let ast: syn::DeriveInput = syn::parse(tokens).unwrap();
+    //ensure_no_extra_attrs(&ast.attrs);
+    //eprintln!("token attrs: {:?}", ast.attrs);
     TokenStream1::new()
 }
 
@@ -82,6 +121,16 @@ fn ensure_no_extra_attrs(attrs: &[syn::Attribute]) {
             }
         }
     })
+}
+
+/// Returns the format/re string, e.g. for #[pars::fmt("my string")] returns
+/// "my string".
+fn get_attr_string(args: AttributeArgs) -> String {
+    match args.first() {
+        Some(NestedMeta::Literal(Lit::Str(s))) => s.value(),
+        Some(_) => panic!("missing attr string"),
+        None => panic!("pars requires arguments"),
+    }
 }
 
 #[proc_macro_derive(ParsFromStr, attributes(pars))]
@@ -177,7 +226,6 @@ fn extract_meta2(ast: &syn::DeriveInput) -> Result<Mode, String> {
                 eprintln!("nameval {:?}: {:?}", &ident, &lit );
                 Some((ident.to_string(), lit))
             }
-            _ => None
         })
     .collect::<HashMap<_,_>>();
     println!("all args: {:?}", &all_args.keys().collect::<Vec<_>>());
