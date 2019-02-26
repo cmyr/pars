@@ -22,13 +22,13 @@ fn main() {
     //assert_eq!(named_pos.y, 4);
     //assert_eq!(named_pos.name, "someone");
     //println!("we got {:?}", named_pos);
-    let named_pos = NamedPos2::pars_from_str("hello: (32, -420)").unwrap();
-    assert_eq!(named_pos,
-               NamedPos2 {
-                   name: "hello".into(),
-                   x: 32,
-                   y: -420,
-               });
+//    let named_pos = NamedPos2::pars_from_str("hello: (32, -420)").unwrap();
+//    assert_eq!(named_pos,
+//               NamedPos2 {
+//                   name: "hello".into(),
+//                   x: 32,
+//                   y: -420,
+//               });
 }
 
 #[cfg(test)]

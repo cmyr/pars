@@ -40,24 +40,26 @@ extern crate syn;
 #[macro_use]
 extern crate quote;
 
+mod container;
+
 use proc_macro::TokenStream as TokenStream1;
 use proc_macro2::{Span, TokenStream};
 use std::vec::Vec;
 use std::collections::HashMap;
-use syn::{Ident, Item, ItemStruct, ItemEnum, Lit, Meta, MetaNameValue, NestedMeta, AttributeArgs};
-
+use syn::{DeriveInput, Ident, Item, ItemStruct, ItemEnum, Lit, Meta, MetaNameValue, NestedMeta, AttributeArgs};
+use container::Container;
 
 #[proc_macro_attribute]
 pub fn re(attr: TokenStream1, tokens: TokenStream1) -> TokenStream1 {
     //ensure_no_extra_attrs(&ast.attrs);
     let args = parse_macro_input!(attr as AttributeArgs);
     let re_string = get_attr_string(args);
-    let item = parse_macro_input!(tokens as Item);
-    match item {
-        Item::Struct(item) => gen_re_struct(re_string, item),
-        Item::Enum(item) => gen_re_enum(re_string, item),
-        _other => panic!("pars::re only supports structs and enums"),
-    }
+
+    let parse_tokens = tokens.clone();
+    let item = parse_macro_input!(parse_tokens as DeriveInput);
+    let container = Container::from_ast(&item);
+
+    tokens
 }
 
 fn gen_re_struct(re_string: String, item: ItemStruct) -> TokenStream1 {
