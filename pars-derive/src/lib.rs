@@ -47,7 +47,7 @@ use proc_macro2::{Span, TokenStream};
 use std::vec::Vec;
 use std::collections::HashMap;
 use syn::{DeriveInput, Ident, Item, ItemStruct, ItemEnum, Lit, Meta, MetaNameValue, NestedMeta, AttributeArgs};
-use container::Container;
+use container::{Container, Data, Field};
 
 #[proc_macro_attribute]
 pub fn re(attr: TokenStream1, tokens: TokenStream1) -> TokenStream1 {
@@ -57,53 +57,77 @@ pub fn re(attr: TokenStream1, tokens: TokenStream1) -> TokenStream1 {
 
     let parse_tokens = tokens.clone();
     let item = parse_macro_input!(parse_tokens as DeriveInput);
-    let container = Container::from_ast(&item);
+    let container = Container::from_ast(&item).unwrap();
 
-    tokens
+    let generated = match &container.data {
+        Data::Enum(_) => unimplemented!(),
+        Data::Struct(_,_) => gen_re_struct(re_string, &container),
+    };
+
+    tokens.into_iter().chain(generated).collect()
 }
 
-fn gen_re_struct(re_string: String, item: ItemStruct) -> TokenStream1 {
-    let struct_init_body : TokenStream =
-        item.fields
-        .iter()
+//FIXME: static regex or something, at least don't be compiling in the parse fn
+fn gen_re_struct(re_string: String, container: &Container) -> TokenStream1 {
+    let parse_prelude = quote! {
+        let pat = ::pars::regex_new(#re_string).unwrap();
+        let caps = pat.captures(s).ok_or("failed to match input")?;
+    };
+
+    let struct_name = container.ident.clone();
+
+    let parse_body : TokenStream =
+        container.data.all_fields()
         .enumerate()
         .map(|(i, field)| {
-            let field_name = field.ident
+            let field_name = field.original.ident
                 .clone()
                 .expect("named struct fields only sowwwy");
 
             quote! {
-                #field_name: caps.get(#i + 1)
-                .map(|s| s.as_str().parse().map_err(|_| "parse failed"))
-                    .ok_or("missing field")??,
+                let #field_name = caps.get(#i + 1)
+                    .map(|s| s.as_str().parse().map_err(|_| "parse failed"))
+                    .ok_or("missing field")??;
             }
         })
     .collect();
 
-    let struct_name = item.ident.clone();
+    let parse_body = quote!{
+        #parse_prelude
+        #parse_body
+    };
 
-    //FIXME: static regex or something, at least don't be compiling in the parse fn
-    let gen: TokenStream1 = quote! {
-        #item
+    gen_parse_fn(struct_name, parse_body, container.data.all_fields()).into()
+}
 
+fn gen_parse_fn<'a, I: Iterator<Item = &'a Field<'a>>>(struct_name: Ident, parse_body: TokenStream, fields: I) -> TokenStream {
+    let initializer_body: TokenStream = fields 
+        .map(|field| {
+            let field_name = field.original.ident
+                .clone()
+                .expect("named struct fields only sowwwy");
+
+            quote!{
+                #field_name : #field_name,
+            }
+        }).collect();
+
+    quote! {
         impl #struct_name {
             fn pars_from_str(s: &str) -> ::std::result::Result<#struct_name, &'static str> {
-                let pat = ::pars::regex_new(#re_string).unwrap();
-                //.map_err(|_| "couldn't compile regex, \
-                //which honestly why are we doing this at the call site?")?;
-                let caps = pat.captures(s).ok_or("failed to match input")?;
+                #parse_body
+
                 Ok(
                     #struct_name {
-                        #struct_init_body
+                        #initializer_body
                     }
                 )
             }
         }
-    }.into();
-    gen
+    }
 }
 
-fn gen_re_enum(_re_string: String, _item: ItemEnum) -> TokenStream1 {
+fn gen_re_enum(re_string: String, container: &Container) -> TokenStream1 {
     unimplemented!("enum not supported");
 }
 
@@ -119,6 +143,7 @@ pub fn fmt(_attr: TokenStream1, _tokens: TokenStream1) -> TokenStream1 {
 }
 
 //TODO: Fancy panics with the span of 'a'
+// FIXME: not called currently
 fn ensure_no_extra_attrs(attrs: &[syn::Attribute]) {
     attrs.iter().for_each(|a| {
         if let Some(seg) = a.path.segments.first() {
@@ -344,6 +369,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn extract_meta_simple() {
         let ast = syn::parse(
             quote! {
