@@ -61,17 +61,22 @@ pub fn re(attr: TokenStream1, tokens: TokenStream1) -> TokenStream1 {
 }
 
 fn gen_re_struct(re_string: String, item: ItemStruct) -> TokenStream1 {
+    let struct_init_body : TokenStream =
+        item.fields
+        .iter()
+        .enumerate()
+        .map(|(i, field)| {
+            let field_name = field.ident
+                .clone()
+                .expect("named struct fields only sowwwy");
 
-    let mut struct_init_body = TokenStream::new();
-    for (i, field) in item.fields.iter().enumerate() {
-        let field_name = field.ident.clone().expect("named struct fields only sowwwy");
-        let parsed_field = quote! {
-            #field_name: caps.get(#i + 1)
-            .map(|s| s.as_str().parse().map_err(|_| "parse failed"))
-            .ok_or("missing field")??,
-        };
-        struct_init_body.extend(parsed_field);
-    }
+            quote! {
+                #field_name: caps.get(#i + 1)
+                .map(|s| s.as_str().parse().map_err(|_| "parse failed"))
+                    .ok_or("missing field")??,
+            }
+        })
+    .collect();
 
     let struct_name = item.ident.clone();
 
@@ -80,10 +85,10 @@ fn gen_re_struct(re_string: String, item: ItemStruct) -> TokenStream1 {
         #item
 
         impl #struct_name {
-            fn pars_from_str(s: &str) -> Result<#struct_name, &'static str> {
-                let pat = pars::regex_new(#re_string).unwrap();
+            fn pars_from_str(s: &str) -> ::std::result::Result<#struct_name, &'static str> {
+                let pat = ::pars::regex_new(#re_string).unwrap();
                 //.map_err(|_| "couldn't compile regex, \
-                //which honsetly why are we doing this at the call site?")?;
+                //which honestly why are we doing this at the call site?")?;
                 let caps = pat.captures(s).ok_or("failed to match input")?;
                 Ok(
                     #struct_name {

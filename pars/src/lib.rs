@@ -12,7 +12,7 @@ pub trait ParsFromStr: Sized {
 }
 
 /// This is a sneaky re-export so that the client crate doesn't need to have
-/// the regex crate in it's cargo.toml.
+/// the regex crate in its cargo.toml.
 #[doc(hidden)]
 pub fn regex_new(s: &str) -> Result<Regex, RegexErr> {
     Regex::new(s)
