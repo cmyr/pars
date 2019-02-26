@@ -4,7 +4,7 @@ extern crate pars_derive;
 #[doc(hidden)]
 pub use pars_derive::*;
 
-use regex::{Regex, Error as RegexErr};
+use regex::{Error as RegexErr, Regex};
 
 pub trait ParsFromStr: Sized {
     type Err;
@@ -19,5 +19,4 @@ pub fn regex_new(s: &str) -> Result<Regex, RegexErr> {
 }
 
 #[cfg(test)]
-mod tests {
-}
+mod tests {}

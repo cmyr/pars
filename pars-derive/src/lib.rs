@@ -42,12 +42,15 @@ extern crate quote;
 
 mod container;
 
+use container::{Container, Data, Field};
 use proc_macro::TokenStream as TokenStream1;
 use proc_macro2::{Span, TokenStream};
-use std::vec::Vec;
 use std::collections::HashMap;
-use syn::{DeriveInput, Ident, Item, ItemStruct, ItemEnum, Lit, Meta, MetaNameValue, NestedMeta, AttributeArgs};
-use container::{Container, Data, Field};
+use std::vec::Vec;
+use syn::{
+    AttributeArgs, DeriveInput, Ident, Item, ItemEnum, ItemStruct, Lit, Meta, MetaNameValue,
+    NestedMeta,
+};
 
 #[proc_macro_attribute]
 pub fn re(attr: TokenStream1, tokens: TokenStream1) -> TokenStream1 {
@@ -61,7 +64,7 @@ pub fn re(attr: TokenStream1, tokens: TokenStream1) -> TokenStream1 {
 
     let generated = match &container.data {
         Data::Enum(_) => unimplemented!(),
-        Data::Struct(_,_) => gen_re_struct(re_string, &container),
+        Data::Struct(_, _) => gen_re_struct(re_string, &container),
     };
 
     tokens.into_iter().chain(generated).collect()
@@ -76,13 +79,12 @@ fn gen_re_struct(re_string: String, container: &Container) -> TokenStream1 {
 
     let struct_name = container.ident.clone();
 
-    let parse_body : TokenStream =
-        container.data.all_fields()
+    let parse_body: TokenStream = container
+        .data
+        .all_fields()
         .enumerate()
         .map(|(i, field)| {
-            let field_name = field.original.ident
-                .clone()
-                .expect("named struct fields only sowwwy");
+            let field_name = field.original.ident.clone().expect("named struct fields only sowwwy");
 
             quote! {
                 let #field_name = caps.get(#i + 1)
@@ -90,9 +92,9 @@ fn gen_re_struct(re_string: String, container: &Container) -> TokenStream1 {
                     .ok_or("missing field")??;
             }
         })
-    .collect();
+        .collect();
 
-    let parse_body = quote!{
+    let parse_body = quote! {
         #parse_prelude
         #parse_body
     };
@@ -100,17 +102,20 @@ fn gen_re_struct(re_string: String, container: &Container) -> TokenStream1 {
     gen_parse_fn(struct_name, parse_body, container.data.all_fields()).into()
 }
 
-fn gen_parse_fn<'a, I: Iterator<Item = &'a Field<'a>>>(struct_name: Ident, parse_body: TokenStream, fields: I) -> TokenStream {
-    let initializer_body: TokenStream = fields 
+fn gen_parse_fn<'a, I: Iterator<Item = &'a Field<'a>>>(
+    struct_name: Ident,
+    parse_body: TokenStream,
+    fields: I,
+) -> TokenStream {
+    let initializer_body: TokenStream = fields
         .map(|field| {
-            let field_name = field.original.ident
-                .clone()
-                .expect("named struct fields only sowwwy");
+            let field_name = field.original.ident.clone().expect("named struct fields only sowwwy");
 
-            quote!{
+            quote! {
                 #field_name : #field_name,
             }
-        }).collect();
+        })
+        .collect();
 
     quote! {
         impl #struct_name {
@@ -148,8 +153,10 @@ fn ensure_no_extra_attrs(attrs: &[syn::Attribute]) {
     attrs.iter().for_each(|a| {
         if let Some(seg) = a.path.segments.first() {
             if seg.into_value().ident == Ident::new("pars", Span::call_site()) {
-                panic!("Only one pars:: macro attribute may be used for a \
-                        given type.");
+                panic!(
+                    "Only one pars:: macro attribute may be used for a \
+                     given type."
+                );
             }
         }
     })
@@ -242,7 +249,9 @@ const META_RE: &str = "pars::re";
 const META_FMT: &str = "pars::fmt";
 
 fn extract_meta2(ast: &syn::DeriveInput) -> Result<Mode, String> {
-    let mut all_args = ast.attrs.iter()
+    let mut all_args = ast
+        .attrs
+        .iter()
         .inspect(|a| eprintln!("{:?}", a.path))
         .flat_map(|a| a.parse_meta())
         .flat_map(|meta_attr| match meta_attr {
@@ -254,12 +263,12 @@ fn extract_meta2(ast: &syn::DeriveInput) -> Result<Mode, String> {
                 eprintln!("word {:?}", w);
                 None
             }
-            Meta::NameValue(MetaNameValue {ident, lit, ..}) => {
-                eprintln!("nameval {:?}: {:?}", &ident, &lit );
+            Meta::NameValue(MetaNameValue { ident, lit, .. }) => {
+                eprintln!("nameval {:?}: {:?}", &ident, &lit);
                 Some((ident.to_string(), lit))
             }
         })
-    .collect::<HashMap<_,_>>();
+        .collect::<HashMap<_, _>>();
     println!("all args: {:?}", &all_args.keys().collect::<Vec<_>>());
 
     if all_args.contains_key(META_FMT) && all_args.contains_key(META_RE) {
@@ -286,9 +295,7 @@ fn extract_meta(ast: &syn::DeriveInput) -> Option<String> {
         let option = option.parse_meta().unwrap();
         match option {
             // Match `#[ident = lit]` attributes.  Match guard makes it `#[prefix = lit]`
-            Meta::NameValue(MetaNameValue {
-                ref ident, ref lit, ..
-            }) if ident == "pars" => {
+            Meta::NameValue(MetaNameValue { ref ident, ref lit, .. }) if ident == "pars" => {
                 if let Lit::Str(lit) = lit {
                     pars_fmt = Some(lit.value());
                 } // else return some type error
@@ -361,10 +368,7 @@ mod tests {
     fn parse_vars_complexish() {
         assert_eq!(
             parse_vars("$name& $date* $a:$b"),
-            (
-                vec!["name", "date", "a", "b"],
-                vec!["", "& ", "* ", ":", ""]
-            )
+            (vec!["name", "date", "a", "b"], vec!["", "& ", "* ", ":", ""])
         );
     }
 
