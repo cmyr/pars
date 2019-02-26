@@ -55,11 +55,11 @@ use syn::{
 #[proc_macro_attribute]
 pub fn re(attr: TokenStream1, tokens: TokenStream1) -> TokenStream1 {
     //ensure_no_extra_attrs(&ast.attrs);
+    let parse_tokens = tokens.clone();
     let args = parse_macro_input!(attr as AttributeArgs);
+    let item = parse_macro_input!(parse_tokens as DeriveInput);
     let re_string = get_attr_string(args);
 
-    let parse_tokens = tokens.clone();
-    let item = parse_macro_input!(parse_tokens as DeriveInput);
     let container = Container::from_ast(&item).unwrap();
 
     let generated = match &container.data {
@@ -68,6 +68,17 @@ pub fn re(attr: TokenStream1, tokens: TokenStream1) -> TokenStream1 {
     };
 
     tokens.into_iter().chain(generated).collect()
+}
+
+#[proc_macro_attribute]
+pub fn fmt(_attr: TokenStream1, _tokens: TokenStream1) -> TokenStream1 {
+    //eprintln!("fmt attr: {:?}", &attr);
+    //eprintln!("fmt tokens: {:?}", &tokens);
+
+    //let ast: syn::DeriveInput = syn::parse(tokens).unwrap();
+    //ensure_no_extra_attrs(&ast.attrs);
+    //eprintln!("token attrs: {:?}", ast.attrs);
+    TokenStream1::new()
 }
 
 //FIXME: static regex or something, at least don't be compiling in the parse fn
@@ -134,17 +145,6 @@ fn gen_parse_fn<'a, I: Iterator<Item = &'a Field<'a>>>(
 
 fn gen_re_enum(re_string: String, container: &Container) -> TokenStream1 {
     unimplemented!("enum not supported");
-}
-
-#[proc_macro_attribute]
-pub fn fmt(_attr: TokenStream1, _tokens: TokenStream1) -> TokenStream1 {
-    //eprintln!("fmt attr: {:?}", &attr);
-    //eprintln!("fmt tokens: {:?}", &tokens);
-
-    //let ast: syn::DeriveInput = syn::parse(tokens).unwrap();
-    //ensure_no_extra_attrs(&ast.attrs);
-    //eprintln!("token attrs: {:?}", ast.attrs);
-    TokenStream1::new()
 }
 
 //TODO: Fancy panics with the span of 'a'
