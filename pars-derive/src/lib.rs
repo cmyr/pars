@@ -82,7 +82,6 @@ pub fn re(attr: TokenStream1, tokens: TokenStream1) -> TokenStream1 {
     let mode = Mode::Regex(args);
 
     let item = parse_macro_input!(tokens as DeriveInput);
-
     let container = Container::from_ast(&item).unwrap();
 
     generate_impls(mode, &container)
@@ -116,6 +115,11 @@ fn generate_impls(mode: Mode, cont: &Container) -> Result<TokenStream, Vec<syn::
     let ident = &cont.ident;
     let orig = &cont.original;
 
+    let mode_block = match mode {
+        Mode::Regex(ref attrs) => generate_re_block(attrs, &cont.ident)?,
+        Mode::Fmt(ref attrs) => generate_fmt_block(attrs, &cont.ident)?,
+    };
+
     let body = match &cont.data {
         Data::Struct(Style::Struct, ref fields) => gen_struct_body(&mode, fields),
         Data::Struct(Style::Tuple, ref fields) => gen_tuple_body(&mode, fields),
@@ -125,13 +129,29 @@ fn generate_impls(mode: Mode, cont: &Container) -> Result<TokenStream, Vec<syn::
     let impl_block = quote! {
         #orig
 
-        impl #ident {
-            fn pars_from_str(src: &str) -> Result<Self, String> {
+        #mode_block
+
+        impl ::pars::ParsFromStr for #ident {
+            fn pars_from_str(src: &str) -> Result<Self, ::pars::Error> {
+                let captures = _PARS_TYPENAME_GET_CAPTURES(src)?;
+                #ident
                 #body
             }
         }
     };
+
     Ok(impl_block)
+}
+
+fn generate_re_block(attrs: &AttributeArgs, ident: &syn::Ident) -> Result<TokenStream, Vec<syn::Error>> {
+    let s = get_attr_string(attrs).map_err(|e| vec![e])?;
+    // we need to do our fancy regex thing here :/
+    // first check our regex:
+    panic!("SUCCESS {:?}", s);
+}
+
+fn generate_fmt_block(attrs: &AttributeArgs, ident: &syn::Ident) -> Result<TokenStream, Vec<syn::Error>> {
+    unimplemented!()
 }
 
 //NOTE: JUST A SKECTH
@@ -140,6 +160,16 @@ fn generate_impls(mode: Mode, cont: &Container) -> Result<TokenStream, Vec<syn::
 //}
 
 fn gen_struct_body<'a>(mode: &Mode, fields: &[Field<'a>]) -> TokenStream {
+    //what do we want?
+
+    // we want the output,
+    // {
+    // ident1: src.parse_idx(0)?,
+    // ident2: src.parse_idx(0)?,
+    // }
+    //
+    // which means we need this str src type in scope.
+
     unimplemented!()
         //let mut tokes = TokenStream::new();
         //for (i, f) in fields.iter().enumerate() {
@@ -304,10 +334,10 @@ fn ensure_no_extra_attrs(attrs: &[syn::Attribute]) {
 //}
 
 /// "my string".
-fn get_attr_string(args: AttributeArgs) -> String {
+fn get_attr_string(args: &AttributeArgs) -> Result<String, syn::Error> {
     match args.first() {
-        Some(NestedMeta::Literal(Lit::Str(s))) => s.value(),
-        Some(_) => panic!("missing attr string"),
+        Some(NestedMeta::Literal(Lit::Str(s))) => Ok(s.value()),
+        Some(_other) => Err(syn::Error::new_spanned(_other, "first argument should be a string")),
         None => panic!("pars requires arguments"),
     }
 }
