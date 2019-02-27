@@ -52,6 +52,8 @@
 //! }
 //! ```
 
+#![recursion_limit = "128"]
+
 extern crate proc_macro;
 #[macro_use]
 extern crate syn;
@@ -63,12 +65,10 @@ mod container;
 use container::{Container, Data, Field, Style};
 use proc_macro::TokenStream as TokenStream1;
 use proc_macro2::{Span, TokenStream};
-use std::collections::HashMap;
 use std::vec::Vec;
-use syn::{
-    AttributeArgs, DeriveInput, Ident, Item, ItemEnum, ItemStruct, Lit, Meta, MetaNameValue,
-    NestedMeta,
-};
+use syn::{AttributeArgs, DeriveInput, Ident, Lit, NestedMeta};
+
+use regex::Regex;
 
 enum Mode {
     Fmt(AttributeArgs),
@@ -84,44 +84,32 @@ pub fn re(attr: TokenStream1, tokens: TokenStream1) -> TokenStream1 {
     let item = parse_macro_input!(tokens as DeriveInput);
     let container = Container::from_ast(&item).unwrap();
 
-    generate_impls(mode, &container)
-        .unwrap_or_else(to_compile_errors)
-        .into()
-
-    //let re_string = get_attr_string(args);
-
-    //let generated = match &container.data {
-        //Data::Enum(_) => unimplemented!(),
-        //Data::Struct(_, _) => gen_re_struct(re_string, &container),
-    //};
-
-    //tokens.into_iter().chain(generated).collect()
+    generate_impls(mode, &container).unwrap_or_else(to_compile_errors).into()
 }
 
 #[proc_macro_attribute]
-pub fn fmt(_attr: TokenStream1, _tokens: TokenStream1) -> TokenStream1 {
-    //eprintln!("fmt attr: {:?}", &attr);
-    //eprintln!("fmt tokens: {:?}", &tokens);
-
-    //let ast: syn::DeriveInput = syn::parse(tokens).unwrap();
-    //ensure_no_extra_attrs(&ast.attrs);
-    //eprintln!("token attrs: {:?}", ast.attrs);
-    TokenStream1::new()
+pub fn fmt(attr: TokenStream1, _tokens: TokenStream1) -> TokenStream1 {
+    let args = parse_macro_input!(attr as AttributeArgs);
+    let _mode = Mode::Fmt(args);
+    unimplemented!()
 }
 
 /// The 'main' function for the actual code generation
 fn generate_impls(mode: Mode, cont: &Container) -> Result<TokenStream, Vec<syn::Error>> {
-
     let ident = &cont.ident;
     let orig = &cont.original;
+    let fn_ident = syn::Ident::new(
+        &format!("_PARS_matches_for_{}", cont.ident.to_string()),
+        Span::call_site(),
+    );
 
     let mode_block = match mode {
-        Mode::Regex(ref attrs) => generate_re_block(attrs, &cont.ident)?,
-        Mode::Fmt(ref attrs) => generate_fmt_block(attrs, &cont.ident)?,
+        Mode::Regex(ref attrs) => generate_re_block(attrs, &cont)?,
+        Mode::Fmt(ref attrs) => generate_fmt_block(attrs, &cont)?,
     };
 
     let body = match &cont.data {
-        Data::Struct(Style::Struct, ref fields) => gen_struct_body(&mode, fields),
+        Data::Struct(Style::Struct, _) => gen_struct_body(cont),
         Data::Struct(Style::Tuple, ref fields) => gen_tuple_body(&mode, fields),
         _other => unimplemented!(),
     };
@@ -133,9 +121,12 @@ fn generate_impls(mode: Mode, cont: &Container) -> Result<TokenStream, Vec<syn::
 
         impl ::pars::ParsFromStr for #ident {
             fn pars_from_str(src: &str) -> Result<Self, ::pars::Error> {
-                let captures = _PARS_TYPENAME_GET_CAPTURES(src)?;
-                #ident
-                #body
+                use pars::Matches;
+                let captures = #fn_ident(src)?;
+                Ok(
+                    #ident
+                    #body
+                )
             }
         }
     };
@@ -143,116 +134,63 @@ fn generate_impls(mode: Mode, cont: &Container) -> Result<TokenStream, Vec<syn::
     Ok(impl_block)
 }
 
-fn generate_re_block(attrs: &AttributeArgs, ident: &syn::Ident) -> Result<TokenStream, Vec<syn::Error>> {
-    let s = get_attr_string(attrs).map_err(|e| vec![e])?;
-    // we need to do our fancy regex thing here :/
+fn generate_re_block(
+    attrs: &AttributeArgs,
+    cont: &Container,
+) -> Result<TokenStream, Vec<syn::Error>> {
+    let re_string = get_attr_string(attrs).map_err(|e| vec![e])?;
     // first check our regex:
-    panic!("SUCCESS {:?}", s);
-}
+    let _ = Regex::new(&re_string)
+        .map_err(|e| vec![syn::Error::new_spanned(attrs.first().unwrap(), e.to_string())])?;
+    let fn_ident = syn::Ident::new(
+        &format!("_PARS_matches_for_{}", cont.ident.to_string()),
+        Span::call_site(),
+    );
+    let num_fields = cont.data.num_fields();
 
-fn generate_fmt_block(attrs: &AttributeArgs, ident: &syn::Ident) -> Result<TokenStream, Vec<syn::Error>> {
-    unimplemented!()
-}
-
-//NOTE: JUST A SKECTH
-//trait Matcher {
-    //fn get_match<T: FromStr>(&self, idx: usize) -> Result<T, T::Err>;
-//}
-
-fn gen_struct_body<'a>(mode: &Mode, fields: &[Field<'a>]) -> TokenStream {
-    //what do we want?
-
-    // we want the output,
-    // {
-    // ident1: src.parse_idx(0)?,
-    // ident2: src.parse_idx(0)?,
-    // }
-    //
-    // which means we need this str src type in scope.
-
-    unimplemented!()
-        //let mut tokes = TokenStream::new();
-        //for (i, f) in fields.iter().enumerate() {
-            //let name = &f.ident;
-
-            //tokes.extend(quote! {
-                //#name: matches.get_match(#i).cool()??,
-            //})
-        //}
-}
-
-fn gen_tuple_body<'a>(mode: &Mode, fields: &[Field<'a>]) -> TokenStream {
-    unimplemented!()
-}
-
-//FIXME: static regex or something, at least don't be compiling in the parse fn
-fn gen_re_struct(re_string: String, container: &Container) -> TokenStream1 {
-    let parse_prelude = quote! {
-        let pat = ::pars::regex_new(#re_string).unwrap();
-        let caps = pat.captures(s).ok_or("failed to match input")?;
-    };
-
-    let struct_name = container.ident.clone();
-
-    let parse_body: TokenStream = container
-        .data
-        .all_fields()
-        .enumerate()
-        .map(|(i, field)| {
-            let field_name = field.original.ident.clone().expect("named struct fields only sowwwy");
-
-            quote! {
-                let #field_name = caps.get(#i + 1)
-                    .map(|s| s.as_str().parse().map_err(|_| "parse failed"))
-                    .ok_or("missing field")??;
+    //TODO: can we just return -> impl Fn(usize) -> Result<&str, Error>?;
+    let re_block = quote! {
+        fn #fn_ident<'a>(src: &'a str) -> Result<impl ::pars::Matches + 'a, ::pars::Error> {
+            let pat = ::pars::regex_new(&#re_string).unwrap();
+            let caps = pat.captures(src).ok_or(::pars::Error::MatchFailed(format!("no matches")))?;
+            if caps.len() != #num_fields + 1 {
+                let err_msg = format!("Incorrect match count for '{}', expected {} found {}",
+                                      src, #num_fields, caps.len() - 1);
+                return Err(::pars::Error::MatchFailed(err_msg));
             }
-        })
-        .collect();
-
-    let parse_body = quote! {
-        #parse_prelude
-        #parse_body
-    };
-
-    gen_parse_fn(struct_name, parse_body, container.data.all_fields()).into()
-}
-
-fn gen_parse_fn<'a, I: Iterator<Item = &'a Field<'a>>>(
-    struct_name: Ident,
-    parse_body: TokenStream,
-    fields: I,
-) -> TokenStream {
-    let initializer_body: TokenStream = fields
-        .map(|field| {
-            let field_name = field.original.ident.clone().expect("named struct fields only sowwwy");
-
-            quote! {
-                #field_name : #field_name,
-            }
-        })
-        .collect();
-
-    quote! {
-        impl #struct_name {
-            fn pars_from_str(s: &str) -> ::std::result::Result<#struct_name, &'static str> {
-                #parse_body
-
-                Ok(
-                    #struct_name {
-                        #initializer_body
-                    }
-                )
-            }
+            Ok(caps)
         }
-    }
+    };
+    Ok(re_block)
 }
 
-fn gen_re_enum(re_string: String, container: &Container) -> TokenStream1 {
-    unimplemented!("enum not supported");
+#[allow(unused_variables)]
+fn generate_fmt_block(
+    attrs: &AttributeArgs,
+    cont: &Container,
+) -> Result<TokenStream, Vec<syn::Error>> {
+    unimplemented!()
+}
+
+fn gen_struct_body<'a>(cont: &Container) -> TokenStream {
+    let mut out = TokenStream::new();
+    for (i, field) in cont.data.all_fields().enumerate() {
+        let ident = field.original.ident.as_ref().unwrap();
+        out.extend(quote! {
+            #ident: captures.parse_idx(#i)?,
+        });
+    }
+
+    quote! {{#out}}
+}
+
+fn gen_tuple_body<'a>(_mode: &Mode, _fields: &[Field<'a>]) -> TokenStream {
+    unimplemented!()
 }
 
 //TODO: Fancy panics with the span of 'a'
 // FIXME: not called currently
+#[allow(dead_code)]
 fn ensure_no_extra_attrs(attrs: &[syn::Attribute]) {
     attrs.iter().for_each(|a| {
         if let Some(seg) = a.path.segments.first() {
@@ -266,73 +204,6 @@ fn ensure_no_extra_attrs(attrs: &[syn::Attribute]) {
     })
 }
 
-//#[proc_macro_derive(ParsFromStr, attributes(pars))]
-//pub fn pars_from_str(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    //let ast: syn::DeriveInput = syn::parse(tokens).unwrap();
-    //let pars_fmt = match extract_meta2(&ast) {
-        //Ok(Mode::Fmt(s)) => s,
-        //Ok(Mode::Regex { .. }) => {
-            //eprintln!("pars::re doesn't actually do anything yet");
-            //return proc_macro::TokenStream::new();
-        //}
-        //Err(e) => panic!("{}", e),
-    //};
-
-    //let (variables, nonvariables) = parse_vars(&pars_fmt);
-    //let struct_ident = ast.ident;
-
-    //let function_body = {
-        //let mut function_body = TokenStream::new();
-        //assert_eq!(nonvariables.len(), variables.len() + 1);
-
-        //let mut nonvariables = nonvariables.iter();
-
-        //for variable in &variables {
-            //let nonvariable = nonvariables.next().unwrap();
-            //let variable = Ident::new(variable, Span::call_site());
-
-            //function_body.extend(quote! {
-                //assert!(string.starts_with(#nonvariable));
-                //let (_, string) = string.split_at(#nonvariable.len());
-                //let split_index = string.find(|c: char| !c.is_alphanumeric())
-                    //.unwrap_or(string.len());
-                //let (#variable, string) = string.split_at(split_index);
-            //});
-        //}
-
-        //let last_nonvariable = nonvariables.next();
-        //function_body.extend(quote! {
-            //assert_eq!(string, #last_nonvariable);
-        //});
-
-        //function_body
-    //};
-
-    //let struct_initializer_body = {
-        //let mut struct_initializer_body = TokenStream::new();
-        //for variable in variables {
-            //let variable = Ident::new(variable, Span::call_site());
-            //struct_initializer_body.extend(quote! {
-                //#variable : #variable.parse().unwrap(),
-            //});
-        //}
-
-        //struct_initializer_body
-    //};
-
-    //let gen = quote! {
-        //fn our_fun_function(string: &str) -> #struct_ident {
-
-            //#function_body
-
-            //#struct_ident{
-                //#struct_initializer_body
-            //}
-        //}
-    //};
-    //gen.into()
-//}
-
 /// "my string".
 fn get_attr_string(args: &AttributeArgs) -> Result<String, syn::Error> {
     match args.first() {
@@ -340,69 +211,6 @@ fn get_attr_string(args: &AttributeArgs) -> Result<String, syn::Error> {
         Some(_other) => Err(syn::Error::new_spanned(_other, "first argument should be a string")),
         None => panic!("pars requires arguments"),
     }
-}
-
-const META_RE: &str = "pars::re";
-const META_FMT: &str = "pars::fmt";
-
-//fn extract_meta2(ast: &syn::DeriveInput) -> Result<Mode, String> {
-    //let mut all_args = ast
-        //.attrs
-        //.iter()
-        //.inspect(|a| eprintln!("{:?}", a.path))
-        //.flat_map(|a| a.parse_meta())
-        //.flat_map(|meta_attr| match meta_attr {
-            //Meta::List(l) => {
-                //eprintln!("list {:?}", l);
-                //None
-            //}
-            //Meta::Word(w) => {
-                //eprintln!("word {:?}", w);
-                //None
-            //}
-            //Meta::NameValue(MetaNameValue { ident, lit, .. }) => {
-                //eprintln!("nameval {:?}: {:?}", &ident, &lit);
-                //Some((ident.to_string(), lit))
-            //}
-        //})
-        //.collect::<HashMap<_, _>>();
-    //println!("all args: {:?}", &all_args.keys().collect::<Vec<_>>());
-
-    //if all_args.contains_key(META_FMT) && all_args.contains_key(META_RE) {
-        //Err("Only one of #[pars::fmt] or #[pars::re] can be provided.".into())
-    //} else if let Some(lit) = all_args.remove(META_RE) {
-        //match lit {
-            //Lit::Str(s) => Ok(Mode::Regex { pattern: s.value(), group_order: None }),
-            //_other => Err("pars::re failed, expected str found... something else".into()),
-        //}
-    //} else if let Some(lit) = all_args.remove(META_FMT) {
-        //match lit {
-            //Lit::Str(s) => Ok(Mode::Fmt(s.value())),
-            //_other => Err("pars::fmt failed, expected str found... something else".into()),
-        //}
-    //} else {
-        //Err("`#[derive(ParsFromStr)]` requires one of `#[pars::fmt]` or #[pars::re].".into())
-    //}
-//}
-
-/// Returns
-fn extract_meta(ast: &syn::DeriveInput) -> Option<String> {
-    let mut pars_fmt = None;
-    for option in ast.attrs.iter() {
-        let option = option.parse_meta().unwrap();
-        match option {
-            // Match `#[ident = lit]` attributes.  Match guard makes it `#[prefix = lit]`
-            Meta::NameValue(MetaNameValue { ref ident, ref lit, .. }) if ident == "pars" => {
-                if let Lit::Str(lit) = lit {
-                    pars_fmt = Some(lit.value());
-                } // else return some type error
-            }
-            _ => (),
-            // other => eprintln!("other attr {:?}", other),
-        }
-    }
-
-    pars_fmt
 }
 
 /// Returns (variable names, nonvariable strings).
@@ -415,6 +223,7 @@ fn extract_meta(ast: &syn::DeriveInput) -> Option<String> {
 /// assert_eq!(parse_vars("$name, $date, $favorite_color"),
 ///            (vec!["name","date","favorite_color"],vec!["",", ",", ",""]));
 /// ```
+#[allow(dead_code)]
 fn parse_vars(s: &str) -> (Vec<&str>, Vec<&str>) {
     let mut iter = s.split('$');
 
@@ -446,15 +255,6 @@ fn to_compile_errors(errors: Vec<syn::Error>) -> proc_macro2::TokenStream {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn parse_vars_empty() {
-        assert_eq!(parse_vars(""), (vec![], vec![""]));
-    }
-
-    #[test]
-    fn parse_vars_single() {
-        assert_eq!(parse_vars("$a"), (vec!["a"], vec!["", ""]));
-    }
 
     #[test]
     fn parse_vars_two_following() {
@@ -472,19 +272,5 @@ mod tests {
             parse_vars("$name& $date* $a:$b"),
             (vec!["name", "date", "a", "b"], vec!["", "& ", "* ", ":", ""])
         );
-    }
-
-    #[test]
-    #[ignore]
-    fn extract_meta_simple() {
-        let ast = syn::parse(
-            quote! {
-                #[pars = "hi"]
-                struct foo {}
-            }
-            .into(),
-        )
-        .unwrap();
-        assert_eq!(Some("hi".into()), extract_meta(&ast));
     }
 }

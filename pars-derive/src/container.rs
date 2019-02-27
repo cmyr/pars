@@ -64,7 +64,7 @@ impl<'a> Container<'a> {
         //let mut attrs = attr::Container::from_ast(cx, item);
         let attrs = Attrs::new();
 
-        let mut data = match item.data {
+        let data = match item.data {
             syn::Data::Enum(ref data) => Data::Enum(enum_from_ast(&data.variants)),
             syn::Data::Struct(ref data) => {
                 let (style, fields) = struct_from_ast(&data.fields, None);
@@ -77,14 +77,14 @@ impl<'a> Container<'a> {
             }
         };
 
-        let mut item = Container {
+        let item = Container {
             ident: item.ident.clone(),
             attrs,
             data,
             generics: &item.generics,
             original: item,
         };
-        //check::check(cx, &mut item, derive);
+        //check::check(cx, &item, derive);
         Some(item)
     }
 }
@@ -96,6 +96,13 @@ impl<'a> Data<'a> {
                 Box::new(variants.iter().flat_map(|variant| variant.fields.iter()))
             }
             Data::Struct(_, ref fields) => Box::new(fields.iter()),
+        }
+    }
+
+    pub fn num_fields(&'a self) -> usize {
+        match *self {
+            Data::Enum(ref variants) => variants.len(),
+            Data::Struct(_, ref fields) => fields.len(),
         }
     }
 }
@@ -131,7 +138,7 @@ fn struct_from_ast<'a>(
 
 fn fields_from_ast<'a>(
     fields: &'a Punctuated<syn::Field, Token![,]>,
-    attrs: Option<&Attrs>,
+    _attrs: Option<&Attrs>,
     // container_default: &attr::Default,
 ) -> Vec<Field<'a>> {
     fields
