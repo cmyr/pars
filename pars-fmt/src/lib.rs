@@ -44,15 +44,15 @@ enum Token {
 }
 
 struct Parser<'a> {
-    inp: &'a str,
+    source: &'a str,
     pos: usize,
     state: State,
     tokens: Vec<Token>,
 }
 
 impl<'a> Parser<'a> {
-    fn new(inp: &'a str) -> Self {
-        Parser { inp, pos: 0, state: State::Ready, tokens: Vec::new() }
+    fn new(source: &'a str) -> Self {
+        Parser { source, pos: 0, state: State::Ready, tokens: Vec::new() }
     }
 
     fn run(&mut self) -> Result<(), Error> {
@@ -68,9 +68,9 @@ impl<'a> Parser<'a> {
     }
 
     fn advance(&mut self) -> Result<(), Error> {
-        let (pos, next_state) = match self.inp.as_bytes().get(self.pos) {
-            Some(&b'#') if self.inp.as_bytes().get(self.pos + 1) == Some(&b'{') => {
-                if self.inp.as_bytes().get(self.pos + 2).is_none() {
+        let (pos, next_state) = match self.source.as_bytes().get(self.pos) {
+            Some(&b'#') if self.source.as_bytes().get(self.pos + 1) == Some(&b'{') => {
+                if self.source.as_bytes().get(self.pos + 2).is_none() {
                     return Err("expected identifer, found EOF");
                 }
 
@@ -91,10 +91,10 @@ impl<'a> Parser<'a> {
     }
 
     fn take_field(&mut self) -> Result<(), Error> {
-        let field_end = self.inp.as_bytes()[self.pos..].iter().position(|b| b == &b'}');
+        let field_end = self.source.as_bytes()[self.pos..].iter().position(|b| b == &b'}');
         match field_end {
             Some(end) => {
-                let token = Token::Field(self.inp[self.pos..self.pos + end].to_string());
+                let token = Token::Field(self.source[self.pos..self.pos + end].to_string());
                 self.tokens.push(token);
                 self.pos = self.pos + end + 1;
                 self.state = State::Ready;
@@ -106,12 +106,12 @@ impl<'a> Parser<'a> {
 
     fn take_separator(&mut self, start_pos: usize) -> Result<(), Error> {
         let end_pos = start_pos
-            + self.inp.as_bytes()[self.pos..]
+            + self.source.as_bytes()[self.pos..]
                 .iter()
                 .position(|b| b == &b'#')
-                .unwrap_or(self.inp.len() - self.pos);
+                .unwrap_or(self.source.len() - self.pos);
 
-        let sep_string = self.inp[start_pos..end_pos].to_string();
+        let sep_string = self.source[start_pos..end_pos].to_string();
         assert!(!sep_string.is_empty());
         if let Some(Token::Separator(ref mut existing)) = self.tokens.last_mut() {
             existing.push_str(&sep_string);
@@ -161,7 +161,7 @@ pub struct FmtMatcher {
 #[allow(dead_code)]
 pub struct FmtMatch<'a> {
     matcher: &'a FmtMatcher,
-    inp: &'a str,
+    source: &'a str,
     values: Vec<Range<usize>>,
 }
 
@@ -172,12 +172,12 @@ impl FmtMatcher {
         parser.into_matcher()
     }
 
-    pub fn try_match<'a>(&'a self, inp: &'a str) -> Result<FmtMatch<'a>, Error> {
+    pub fn try_match<'a>(&'a self, source: &'a str) -> Result<FmtMatch<'a>, Error> {
         let mut values = Vec::new();
         let mut pos = 0;
 
         if let Some(ref head) = self.lead_separator {
-            match inp.find(head) {
+            match source.find(head) {
                 Some(0) => pos = head.len(),
                 _ => return Err("failed to find leading separator"),
             }
@@ -185,17 +185,17 @@ impl FmtMatcher {
 
         for (_field, sep) in self.fmt_fields.iter() {
 
-            if pos == inp.len() {
+            if pos == source.len() {
                 return Err("input string exhausted with fields remaining");
             }
             if sep.is_empty() {
                 // take all remaining string
-                values.push(pos..inp.len());
-                pos = inp.len();
+                values.push(pos..source.len());
+                pos = source.len();
                 continue;
             }
 
-            match &inp[pos..].find(sep.as_str()) {
+            match &source[pos..].find(sep.as_str()) {
                 Some(idx) => {
                     values.push(pos..pos + idx);
                     pos = pos + idx + sep.len();
@@ -206,7 +206,7 @@ impl FmtMatcher {
 
         Ok(FmtMatch {
             matcher: self,
-            inp,
+            source,
             values,
         })
     }
@@ -215,7 +215,7 @@ impl FmtMatcher {
 impl<'a> FmtMatch<'a> {
     pub fn get_match(&'a self, idx: usize) -> Result<&'a str, Error> {
         let range = self.values.get(idx).ok_or("no match for index")?;
-        Ok(&self.inp[range.clone()])
+        Ok(&self.source[range.clone()])
     }
 }
 
