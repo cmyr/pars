@@ -3,13 +3,12 @@
 extern crate pars_derive;
 #[doc(hidden)]
 pub use pars_derive::*;
+pub use pars_fmt::*;
 
 use regex::Error as RegexErr;
 /// exported as public so derived functions have access to regex.
 pub use regex::Regex;
 use std::str::FromStr;
-
-pub mod fmt;
 
 pub trait ParsFromStr: Sized {
     fn pars_from_str(s: &str) -> Result<Self, Error>;
@@ -62,6 +61,18 @@ impl Matches for Vec<&str> {
     {
         self[idx].parse::<T>().map_err(|e| Error::ParseFailed(Box::new(e)))
     }
+}
+
+impl<'a> Matches for FmtMatch<'a> {
+    fn parse_idx<E, T>(&self, idx: usize) -> Result<T, Error>
+    where
+        E: std::error::Error + Sized + 'static,
+        T: FromStr<Err = E>,
+        {
+        let s = self.get_match(idx)
+            .map_err(|_| Error::MatchFailed(format!("missing match {}", idx)))?;
+            s.parse::<T>().map_err(|e| Error::ParseFailed(Box::new(e)))
+        }
 }
 
 #[cfg(test)]

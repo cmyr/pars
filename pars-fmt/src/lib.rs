@@ -165,8 +165,8 @@ pub struct FmtMatch<'a> {
 }
 
 impl FmtMatcher {
-    pub fn new(fmt_string: String, _fields: Vec<String>) -> Result<Self, Error> {
-        let mut parser = Parser::new(&fmt_string);
+    pub fn new<S: AsRef<str>>(fmt_string: &str, _fields: &[S]) -> Result<Self, Error> {
+        let mut parser = Parser::new(fmt_string);
         parser.run()?;
         parser.into_matcher()
     }
@@ -208,6 +208,13 @@ impl FmtMatcher {
             inp,
             values,
         })
+    }
+}
+
+impl<'a> FmtMatch<'a> {
+    pub fn get_match(&'a self, idx: usize) -> Result<&'a str, Error> {
+        let range = self.values.get(idx).ok_or("no match for index")?;
+        Ok(&self.inp[range.clone()])
     }
 }
 

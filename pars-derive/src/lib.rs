@@ -88,10 +88,14 @@ pub fn re(attr: TokenStream1, tokens: TokenStream1) -> TokenStream1 {
 }
 
 #[proc_macro_attribute]
-pub fn fmt(attr: TokenStream1, _tokens: TokenStream1) -> TokenStream1 {
+pub fn fmt(attr: TokenStream1, tokens: TokenStream1) -> TokenStream1 {
     let args = parse_macro_input!(attr as AttributeArgs);
-    let _mode = Mode::Fmt(args);
-    unimplemented!()
+    let mode = Mode::Fmt(args);
+
+    let item = parse_macro_input!(tokens as DeriveInput);
+    let container = Container::from_ast(&item).unwrap();
+
+    generate_impls(mode, &container).unwrap_or_else(to_compile_errors).into()
 }
 
 /// The 'main' function for the actual code generation
@@ -174,7 +178,49 @@ fn generate_fmt_block(
     attrs: &AttributeArgs,
     cont: &Container,
 ) -> Result<TokenStream, Vec<syn::Error>> {
-    unimplemented!()
+    let fn_ident = syn::Ident::new(
+        &format!("_PARS_matches_for_{}", cont.ident.to_string()),
+        Span::call_site(),
+    );
+    if let Data::Enum(_) = cont.data {
+        panic!("pars::fmt only works with structs");
+    }
+
+    let field_names = cont.data.all_fields().filter_map(|f| match &f.member {
+        syn::Member::Named(ident) => Some(ident.to_string()),
+        _ => None,
+    }).collect::<Vec<_>>();
+    let fmt_string = get_attr_string(attrs).map_err(|e| vec![e])?;
+    let num_fields = cont.data.num_fields();
+
+    let _ = ::pars_fmt::FmtMatcher::new(&fmt_string, field_names.as_slice()).unwrap();
+
+    let field_names = gen_static_str_slice(field_names.as_slice());
+
+    let fmt_block = quote! {
+        fn #fn_ident<'a>(src: &'a str) -> Result<impl ::pars::Matches + 'a, ::pars::Error> {
+
+            static INSTANCE: ::pars::OnceCell<::pars::FmtMatcher> = ::pars::OnceCell::INIT;
+            let pat = INSTANCE.get_or_init(|| {
+                ::pars::FmtMatcher::new(#fmt_string, #field_names).unwrap()
+            });
+
+            pat.try_match(src).map_err(|e| ::pars::Error::MatchFailed(e.into()))
+        }
+    };
+    Ok(fmt_block)
+}
+
+fn gen_static_str_slice(inp: &[String]) -> TokenStream {
+    let mut out = TokenStream::new();
+    for s in inp {
+        out.extend(
+            quote! { stringify!(s), }
+        );
+    }
+    quote! {
+        &[#out]
+    }
 }
 
 fn gen_struct_body<'a>(cont: &Container) -> TokenStream {

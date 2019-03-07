@@ -11,3 +11,6 @@ once_cell = "0.1"
 [dependencies.pars-derive]
 path = "../pars-derive"
 
+[dependencies.pars-fmt]
+path = "../pars-fmt"
+
