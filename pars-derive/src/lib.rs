@@ -61,6 +61,7 @@ extern crate syn;
 extern crate quote;
 
 mod container;
+mod parse_fmt;
 
 use container::{Container, Data, Field, Style};
 use proc_macro::TokenStream as TokenStream1;
