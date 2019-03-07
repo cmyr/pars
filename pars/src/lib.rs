@@ -9,6 +9,8 @@ use regex::Error as RegexErr;
 pub use regex::Regex;
 use std::str::FromStr;
 
+pub mod fmt;
+
 pub trait ParsFromStr: Sized {
     fn pars_from_str(s: &str) -> Result<Self, Error>;
 }
