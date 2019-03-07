@@ -25,6 +25,8 @@
 //!
 //!```
 
+use std::ops::Range;
+
 type Error = &'static str;
 
 enum State {
@@ -120,6 +122,84 @@ impl<'a> Parser<'a> {
         self.state = State::Ready;
         Ok(())
     }
+
+    fn make_matcher(&self) -> Result<FmtMatcher, Error> {
+        let lead_separator = if let Some(Token::Separator(s)) = self.tokens.first() {
+            Some(s.clone())
+        } else {
+            None
+        };
+
+        let mut fmt_fields = Vec::new();
+        let skip = if lead_separator.is_some() { 1 } else { 0 };
+        for field_sep in self.tokens.as_slice()[skip..].chunks(2) {
+            match field_sep {
+                &[Token::Field(ref field), Token::Separator(ref sep)] => fmt_fields.push((field.clone(), sep.clone())),
+                &[Token::Field(ref field)] => fmt_fields.push((field.clone(), String::new())),
+                &[Token::Separator(_)] => return Err("expected field, found separator"),
+                _other => return Err("quite seriously failed to make matcher"),
+            }
+        };
+
+        Ok(FmtMatcher {
+            lead_separator,
+            fmt_fields,
+            fields: Vec::new(),
+        })
+    }
+}
+
+struct FmtMatcher {
+    lead_separator: Option<String>,
+    fmt_fields: Vec<(String, String)>,
+    fields: Vec<String>,
+}
+
+struct FmtMatch<'a> {
+    matcher: &'a FmtMatcher,
+    inp: &'a str,
+    values: Vec<Range<usize>>,
+}
+
+impl FmtMatcher {
+    fn try_match<'a>(&'a self, inp: &'a str) -> Result<FmtMatch<'a>, Error> {
+        let mut values = Vec::new();
+        let mut pos = 0;
+
+        if let Some(ref head) = self.lead_separator {
+            match inp.find(head) {
+                Some(idx) => pos = head.len(),
+                None => return Err("failed to find leading separator"),
+            }
+        }
+
+        for (field, sep) in self.fmt_fields.iter() {
+
+            if pos == inp.len() {
+                return Err("input string exhausted with fields remaining");
+            }
+            if sep.is_empty() {
+                // take all remaining string
+                values.push(pos..inp.len());
+                pos = inp.len();
+                continue;
+            }
+
+            match &inp[pos..].find(sep.as_str()) {
+                Some(idx) => {
+                    values.push(pos..pos + idx);
+                    pos = pos + idx + sep.len();
+                }
+                None => return Err("failed to find separator"),
+            }
+        }
+
+        Ok(FmtMatch {
+            matcher: self,
+            inp,
+            values,
+        })
+    }
 }
 
 #[cfg(test)]
@@ -160,5 +240,25 @@ mod tests {
     fn test_fail_with_unseparated_fields() {
         let mut parser = Parser::new("#{x}#{y} #{width} #{height}");
         assert!(parser.run().is_err());
+    }
+
+    #[test]
+    fn make_matcher() {
+        let mut parser = Parser::new("#{x}, #{y} #{width} #{height}");
+        parser.run().unwrap();
+        let matcher = parser.make_matcher().unwrap();
+        assert!(matcher.lead_separator.is_none());
+        assert_eq!(matcher.fmt_fields.len(), 4);
+
+        let amatch = matcher.try_match("4, 5 10 11").unwrap();
+        assert_eq!(amatch.values, vec![0..1, 3..4, 5..7, 8..10])
+    }
+
+    #[test]
+    fn match_should_fail() {
+        let mut parser = Parser::new("#{x}, #{y} #{width} #{height}");
+        parser.run().unwrap();
+        let matcher = parser.make_matcher().unwrap();
+        assert!(matcher.try_match("4 5 hello").is_err());
     }
 }
