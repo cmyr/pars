@@ -27,7 +27,7 @@
 
 use std::ops::Range;
 
-type Error = &'static str;
+pub type Error = &'static str;
 
 enum State {
     Ready,
@@ -123,8 +123,9 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
-    fn make_matcher(&self) -> Result<FmtMatcher, Error> {
-        let lead_separator = if let Some(Token::Separator(s)) = self.tokens.first() {
+    fn into_matcher(self) -> Result<FmtMatcher, Error> {
+        let tokens = self.tokens;
+        let lead_separator = if let Some(Token::Separator(s)) = tokens.first() {
             Some(s.clone())
         } else {
             None
@@ -132,14 +133,15 @@ impl<'a> Parser<'a> {
 
         let mut fmt_fields = Vec::new();
         let skip = if lead_separator.is_some() { 1 } else { 0 };
-        for field_sep in self.tokens.as_slice()[skip..].chunks(2) {
-            match field_sep {
-                &[Token::Field(ref field), Token::Separator(ref sep)] => fmt_fields.push((field.clone(), sep.clone())),
-                &[Token::Field(ref field)] => fmt_fields.push((field.clone(), String::new())),
-                &[Token::Separator(_)] => return Err("expected field, found separator"),
-                _other => return Err("quite seriously failed to make matcher"),
+        let mut iter = tokens.into_iter().skip(skip);
+        loop {
+            match (iter.next(), iter.next()) {
+                (Some(Token::Field(field)), Some(Token::Separator(sep))) => fmt_fields.push((field, sep)),
+                (Some(Token::Field(field)), None) => fmt_fields.push((field, String::new())),
+                (None, None) => break,
+                _other => return Err("unexpected token"),
             }
-        };
+        }
 
         Ok(FmtMatcher {
             lead_separator,
@@ -149,31 +151,38 @@ impl<'a> Parser<'a> {
     }
 }
 
-struct FmtMatcher {
+#[allow(dead_code)]
+pub struct FmtMatcher {
     lead_separator: Option<String>,
     fmt_fields: Vec<(String, String)>,
     fields: Vec<String>,
 }
 
-struct FmtMatch<'a> {
+pub struct FmtMatch<'a> {
     matcher: &'a FmtMatcher,
     inp: &'a str,
     values: Vec<Range<usize>>,
 }
 
 impl FmtMatcher {
-    fn try_match<'a>(&'a self, inp: &'a str) -> Result<FmtMatch<'a>, Error> {
+    pub fn new(fmt_string: String, _fields: Vec<String>) -> Result<Self, Error> {
+        let mut parser = Parser::new(&fmt_string);
+        parser.run()?;
+        parser.into_matcher()
+    }
+
+    pub fn try_match<'a>(&'a self, inp: &'a str) -> Result<FmtMatch<'a>, Error> {
         let mut values = Vec::new();
         let mut pos = 0;
 
         if let Some(ref head) = self.lead_separator {
             match inp.find(head) {
-                Some(idx) => pos = head.len(),
-                None => return Err("failed to find leading separator"),
+                Some(0) => pos = head.len(),
+                _ => return Err("failed to find leading separator"),
             }
         }
 
-        for (field, sep) in self.fmt_fields.iter() {
+        for (_field, sep) in self.fmt_fields.iter() {
 
             if pos == inp.len() {
                 return Err("input string exhausted with fields remaining");
@@ -246,7 +255,7 @@ mod tests {
     fn make_matcher() {
         let mut parser = Parser::new("#{x}, #{y} #{width} #{height}");
         parser.run().unwrap();
-        let matcher = parser.make_matcher().unwrap();
+        let matcher = parser.into_matcher().unwrap();
         assert!(matcher.lead_separator.is_none());
         assert_eq!(matcher.fmt_fields.len(), 4);
 
@@ -258,7 +267,7 @@ mod tests {
     fn match_should_fail() {
         let mut parser = Parser::new("#{x}, #{y} #{width} #{height}");
         parser.run().unwrap();
-        let matcher = parser.make_matcher().unwrap();
+        let matcher = parser.into_matcher().unwrap();
         assert!(matcher.try_match("4 5 hello").is_err());
     }
 }
