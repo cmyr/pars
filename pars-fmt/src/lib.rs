@@ -158,6 +158,7 @@ pub struct FmtMatcher {
     fields: Vec<String>,
 }
 
+#[allow(dead_code)]
 pub struct FmtMatch<'a> {
     matcher: &'a FmtMatcher,
     inp: &'a str,

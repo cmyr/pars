@@ -211,11 +211,12 @@ fn generate_fmt_block(
     Ok(fmt_block)
 }
 
+/// Creates a static slice of &'static str from a slice of owned Strings.
 fn gen_static_str_slice(inp: &[String]) -> TokenStream {
     let mut out = TokenStream::new();
-    for s in inp {
+    for _s in inp {
         out.extend(
-            quote! { stringify!(s), }
+            quote! { stringify!(_s), }
         );
     }
     quote! {
