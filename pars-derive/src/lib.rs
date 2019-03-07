@@ -66,7 +66,7 @@ use container::{Container, Data, Field, Style};
 use proc_macro::TokenStream as TokenStream1;
 use proc_macro2::{Span, TokenStream};
 use std::vec::Vec;
-use syn::{AttributeArgs, DeriveInput, Ident, Lit, NestedMeta};
+use syn::{AttributeArgs, DeriveInput, Lit, NestedMeta};
 
 use regex::Regex;
 
@@ -186,22 +186,6 @@ fn gen_struct_body<'a>(cont: &Container) -> TokenStream {
 
 fn gen_tuple_body<'a>(_mode: &Mode, _fields: &[Field<'a>]) -> TokenStream {
     unimplemented!()
-}
-
-//TODO: Fancy panics with the span of 'a'
-// FIXME: not called currently
-#[allow(dead_code)]
-fn ensure_no_extra_attrs(attrs: &[syn::Attribute]) {
-    attrs.iter().for_each(|a| {
-        if let Some(seg) = a.path.segments.first() {
-            if seg.into_value().ident == Ident::new("pars", Span::call_site()) {
-                panic!(
-                    "Only one pars:: macro attribute may be used for a \
-                     given type."
-                );
-            }
-        }
-    })
 }
 
 /// "my string".
