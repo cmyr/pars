@@ -171,6 +171,7 @@ fn generate_from_str(ident: &syn::Ident) -> TokenStream {
             type Err = ::pars::Error;
 
             fn from_str(s: &str) -> Result<Self, ::pars::Error> {
+                use ::pars::ParsFromStr;
                 Self::pars_from_str(s)
             }
         }
