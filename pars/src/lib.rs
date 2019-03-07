@@ -4,7 +4,9 @@ extern crate pars_derive;
 #[doc(hidden)]
 pub use pars_derive::*;
 
-use regex::{Error as RegexErr, Regex};
+use regex::Error as RegexErr;
+/// exported as public so derived functions have access to regex.
+pub use regex::Regex;
 use std::str::FromStr;
 
 pub trait ParsFromStr: Sized {
@@ -23,6 +25,11 @@ pub enum Error {
 pub fn regex_new(s: &str) -> Result<Regex, RegexErr> {
     Regex::new(s)
 }
+
+/// This is a sneaky re-export so that the client crate doesn't need to have
+/// the regex crate in its cargo.toml.
+#[doc(hidden)]
+pub use once_cell::sync::OnceCell;
 
 #[doc(hidden)]
 pub trait Matches {

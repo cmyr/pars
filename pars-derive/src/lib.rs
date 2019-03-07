@@ -151,7 +151,12 @@ fn generate_re_block(
     //TODO: can we just return -> impl Fn(usize) -> Result<&str, Error>?;
     let re_block = quote! {
         fn #fn_ident<'a>(src: &'a str) -> Result<impl ::pars::Matches + 'a, ::pars::Error> {
-            let pat = ::pars::regex_new(&#re_string).unwrap();
+
+            static INSTANCE: ::pars::OnceCell<::pars::Regex> = ::pars::OnceCell::INIT;
+            let pat = INSTANCE.get_or_init(|| {
+                ::pars::regex_new(&#re_string).unwrap()
+            });
+
             let caps = pat.captures(src).ok_or(::pars::Error::MatchFailed(format!("no matches")))?;
             if caps.len() != #num_fields + 1 {
                 let err_msg = format!("Incorrect match count for '{}', expected {} found {}",
