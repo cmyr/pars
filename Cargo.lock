@@ -103,13 +103,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pars-test"
-version = "0.1.0"
-dependencies = [
- "pars 0.1.0",
-]
-
-[[package]]
 name = "proc-macro2"
 version = "0.4.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
