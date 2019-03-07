@@ -118,7 +118,7 @@ fn generate_impls(mode: Mode, cont: &Container) -> Result<TokenStream, Vec<syn::
         _other => unimplemented!(),
     };
 
-    let impl_block = quote! {
+    let mut impl_block = quote! {
         #orig
 
         #mode_block
@@ -135,7 +135,46 @@ fn generate_impls(mode: Mode, cont: &Container) -> Result<TokenStream, Vec<syn::
         }
     };
 
+    impl_block.extend(maybe_generate_from_str(ident, &mode));
+
     Ok(impl_block)
+}
+
+fn maybe_generate_from_str(ident: &syn::Ident, mode: &Mode) -> TokenStream {
+    let attrs = match mode {
+        Mode::Regex(ref attrs) | Mode::Fmt(ref attrs) => attrs,
+    };
+
+    match attrs.len() {
+        1 => quote! {},
+        2 => match &attrs[1] {
+            syn::NestedMeta::Meta(syn::Meta::Word(extra_arg)) => {
+                if extra_arg.to_string() == "gen_from_str" {
+                    generate_from_str(ident)
+                } else {
+                    panic!("Wrong string {:?}", ident.to_string())
+                }
+            }
+            _ => panic!("Misunderstood {:?}", &attrs[1]),
+        },
+        _ => panic!(
+            "That number of arguments doesn't look right. \
+             We only allow the one extra because parsing the \
+             arguments to pars::re(whatever) is hard."
+        ),
+    }
+}
+
+fn generate_from_str(ident: &syn::Ident) -> TokenStream {
+    quote! {
+        impl ::std::str::FromStr for #ident {
+            type Err = ::pars::Error;
+
+            fn from_str(s: &str) -> Result<Self, ::pars::Error> {
+                Self::pars_from_str(s)
+            }
+        }
+    }
 }
 
 fn generate_re_block(
