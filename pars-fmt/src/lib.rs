@@ -25,9 +25,35 @@
 //!
 //!```
 
+use std::fmt;
 use std::ops::Range;
 
 pub type Error = &'static str;
+
+#[derive(Debug, Clone)]
+pub enum MatchError<'a> {
+    IncorrectFields { found: Vec<String>, expected: Vec<String> },
+    MissingSeparator { idx: usize, string: &'a str },
+    InputExhausted,
+}
+
+impl<'a> MatchError<'a> {
+    fn missing_separator(idx: usize, string: &'a str) -> Self {
+        MatchError::MissingSeparator { idx, string }
+    }
+}
+
+impl<'a> fmt::Display for MatchError<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            MatchError::InputExhausted => write!(f, "input exhausted"),
+            MatchError::IncorrectFields { .. } => write!(f, "incorrect fields"),
+            MatchError::MissingSeparator { idx, string } => {
+                write!(f, "missing separator at index {}, text: '{}'", idx, string)
+            }
+        }
+    }
+}
 
 #[derive(Debug)]
 enum State {
@@ -40,8 +66,8 @@ enum State {
 
 #[derive(Debug, Clone, PartialEq)]
 enum Token {
-    Field(String),
-    Separator(String),
+    Field(Range<usize>),
+    Separator(Range<usize>),
 }
 
 struct Parser<'a> {
@@ -86,8 +112,6 @@ impl<'a> Parser<'a> {
             None => (self.pos, State::Finished),
         };
 
-        dbg!(&pos);
-        dbg!(&next_state);
         self.pos = pos;
         self.state = next_state;
         Ok(())
@@ -97,7 +121,7 @@ impl<'a> Parser<'a> {
         let field_end = self.source.as_bytes()[self.pos..].iter().position(|b| b == &b'}');
         match field_end {
             Some(end) => {
-                let token = Token::Field(self.source[self.pos..self.pos + end].to_string());
+                let token = Token::Field(self.pos..self.pos + end);
                 self.tokens.push(token);
                 self.pos = self.pos + end + 1;
                 self.state = State::Ready;
@@ -114,108 +138,121 @@ impl<'a> Parser<'a> {
                 .position(|b| b == &b'#')
                 .unwrap_or(self.source.len() - self.pos);
 
-        let sep_string = self.source[dbg!(start_pos..end_pos)].to_string();
-        assert!(!sep_string.is_empty());
+        let sep_range = start_pos..end_pos;
+        assert!(start_pos < end_pos);
         if let Some(Token::Separator(ref mut existing)) = self.tokens.last_mut() {
-            existing.push_str(&sep_string);
+            existing.end = end_pos;
         } else {
-            self.tokens.push(Token::Separator(sep_string));
+            self.tokens.push(Token::Separator(sep_range));
         }
         self.pos = end_pos;
         self.state = State::Ready;
         Ok(())
     }
 
-    fn into_matcher(self) -> Result<FmtMatcher, Error> {
+    fn into_matcher(self) -> Result<FmtMatcher<'a>, Error> {
         let tokens = self.tokens;
-        let lead_separator = if let Some(Token::Separator(s)) = tokens.first() {
-            Some(s.clone())
-        } else {
-            None
-        };
+        let lead_separator =
+            if let Some(Token::Separator(s)) = tokens.first() { Some(s.clone()) } else { None };
 
         let mut fmt_fields = Vec::new();
         let skip = if lead_separator.is_some() { 1 } else { 0 };
         let mut iter = tokens.into_iter().skip(skip);
         loop {
             match (iter.next(), iter.next()) {
-                (Some(Token::Field(field)), Some(Token::Separator(sep))) => fmt_fields.push((field, sep)),
-                (Some(Token::Field(field)), None) => fmt_fields.push((field, String::new())),
+                (Some(Token::Field(field)), Some(Token::Separator(sep))) => {
+                    fmt_fields.push((field, sep))
+                }
+                (Some(Token::Field(field)), None) => {
+                    fmt_fields.push((field, self.source.len()..self.source.len()))
+                }
                 (None, None) => break,
                 _other => return Err("unexpected token"),
             }
         }
 
-        Ok(FmtMatcher {
-            lead_separator,
-            fmt_fields,
-            fields: Vec::new(),
-        })
+        Ok(FmtMatcher { source: self.source, lead_separator, fmt_fields, fields: Vec::new() })
+    }
+
+    #[cfg(test)]
+    fn resolve_tokens(&'a self) -> Vec<&'a str> {
+        self.tokens
+            .iter()
+            .map(|t| match t {
+                Token::Field(rng) => &self.source[rng.clone()],
+                Token::Separator(rng) => &self.source[rng.clone()],
+            })
+            .collect()
     }
 }
 
 #[allow(dead_code)]
-pub struct FmtMatcher {
-    lead_separator: Option<String>,
-    fmt_fields: Vec<(String, String)>,
+pub struct FmtMatcher<'a> {
+    source: &'a str,
+    lead_separator: Option<Range<usize>>,
+    //NOTE: we represent all substrings as ranges of self.source, to avoid
+    //any unnecessary allocation.
+    fmt_fields: Vec<(Range<usize>, Range<usize>)>,
     fields: Vec<String>,
 }
 
 #[allow(dead_code)]
-pub struct FmtMatch<'a> {
-    matcher: &'a FmtMatcher,
-    source: &'a str,
+pub struct FmtMatch<'a, 'b> {
+    matcher: &'a FmtMatcher<'a>,
+    source: &'b str,
     values: Vec<Range<usize>>,
 }
 
-impl FmtMatcher {
-    pub fn new<S: AsRef<str>>(fmt_string: &str, _fields: &[S]) -> Result<Self, Error> {
+impl<'a> FmtMatcher<'a> {
+    pub fn new<S: AsRef<str>>(fmt_string: &'a str, _fields: &[S]) -> Result<Self, Error> {
         let mut parser = Parser::new(fmt_string);
         parser.run()?;
         parser.into_matcher()
     }
 
-    pub fn try_match<'a>(&'a self, source: &'a str) -> Result<FmtMatch<'a>, Error> {
+    pub fn try_match<'b>(&'a self, source: &'b str) -> Result<FmtMatch<'a, 'b>, MatchError> {
         let mut values = Vec::new();
         let mut pos = 0;
+        let mut current_sep = 0;
 
         if let Some(ref head) = self.lead_separator {
-            match source.find(head) {
+            let sep_string = &self.source[head.clone()];
+            match source.find(sep_string) {
                 Some(0) => pos = head.len(),
-                _ => return Err("failed to find leading separator"),
+                _ => return Err(MatchError::missing_separator(current_sep, sep_string)),
             }
+            current_sep += 1;
         }
 
         for (_field, sep) in self.fmt_fields.iter() {
+            let sep_string = &self.source[sep.clone()];
 
             if pos == source.len() {
-                return Err("input string exhausted with fields remaining");
+                return Err(MatchError::InputExhausted);
             }
-            if sep.is_empty() {
+            if sep.start == sep.end {
                 // take all remaining string
                 values.push(pos..source.len());
                 pos = source.len();
                 continue;
             }
 
-            match &source[pos..].find(sep.as_str()) {
+            match &source[pos..].find(sep_string) {
                 Some(idx) => {
                     values.push(pos..pos + idx);
                     pos = pos + idx + sep.len();
                 }
-                None => return Err("failed to find separator"),
+                None => return Err(MatchError::missing_separator(current_sep, sep_string)),
             }
+
+            current_sep += 1;
         }
 
-        Ok(FmtMatch {
-            matcher: self,
-            source,
-            values,
-        })
+        Ok(FmtMatch { matcher: self, source, values })
     }
 }
 
-impl<'a> FmtMatch<'a> {
+impl<'a, 'b> FmtMatch<'a, 'b> {
     pub fn get_match(&'a self, idx: usize) -> Result<&'a str, Error> {
         let range = self.values.get(idx).ok_or("no match for index")?;
         Ok(&self.source[range.clone()])
@@ -226,34 +263,11 @@ impl<'a> FmtMatch<'a> {
 mod tests {
     use super::*;
 
-    macro_rules! fld {
-        ($s:expr) => {
-            Token::Field($s.into())
-        };
-    }
-
-    macro_rules! sep {
-        ($s:expr) => {
-            Token::Separator($s.into())
-        };
-    }
-
     #[test]
     fn test_simple_parse() {
         let mut parser = Parser::new("#{x}, #{y} #{width} #{height}");
         assert_eq!(parser.run(), Ok(()));
-        assert_eq!(
-            parser.tokens,
-            vec![
-                fld!("x"),
-                sep!(", "),
-                fld!("y"),
-                sep!(" "),
-                fld!("width"),
-                sep!(" "),
-                fld!("height")
-            ]
-        );
+        assert_eq!(parser.resolve_tokens(), vec!["x", ", ", "y", " ", "width", " ", "height"]);
     }
 
     #[test]
@@ -275,11 +289,12 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "MissingSeparator")]
     fn match_should_fail() {
         let mut parser = Parser::new("#{x}, #{y} #{width} #{height}");
         parser.run().unwrap();
         let matcher = parser.into_matcher().unwrap();
-        assert!(matcher.try_match("4 5 hello").is_err());
+        matcher.try_match("4 5 hello").unwrap();
     }
 
     #[test]

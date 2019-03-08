@@ -63,16 +63,17 @@ impl Matches for Vec<&str> {
     }
 }
 
-impl<'a> Matches for FmtMatch<'a> {
+impl<'a, 'b> Matches for FmtMatch<'a, 'b> {
     fn parse_idx<E, T>(&self, idx: usize) -> Result<T, Error>
     where
         E: std::error::Error + Sized + 'static,
         T: FromStr<Err = E>,
-        {
-        let s = self.get_match(idx)
+    {
+        let s = self
+            .get_match(idx)
             .map_err(|_| Error::MatchFailed(format!("missing match {}", idx)))?;
-            s.parse::<T>().map_err(|e| Error::ParseFailed(Box::new(e)))
-        }
+        s.parse::<T>().map_err(|e| Error::ParseFailed(Box::new(e)))
+    }
 }
 
 #[cfg(test)]

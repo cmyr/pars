@@ -246,7 +246,7 @@ fn generate_fmt_block(
                 ::pars::FmtMatcher::new(#fmt_string, #field_names).unwrap()
             });
 
-            pat.try_match(src).map_err(|e| ::pars::Error::MatchFailed(e.into()))
+            pat.try_match(src).map_err(|e| ::pars::Error::MatchFailed(format!("{:?}", e)))
         }
     };
     Ok(fmt_block)
