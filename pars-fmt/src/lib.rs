@@ -4,5 +4,5 @@
 mod error;
 mod simple;
 
+pub use error::{FormatError, MatchError};
 pub use simple::{FmtMatch, FmtMatcher};
-pub use error::{Error, MatchError};

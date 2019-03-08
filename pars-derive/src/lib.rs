@@ -234,7 +234,8 @@ fn generate_fmt_block(
     let num_fields = cont.data.num_fields();
 
     // check that the fmt string is valid
-    let _ = ::pars_fmt::FmtMatcher::new(&fmt_string, field_names.as_slice()).unwrap();
+    let _ = ::pars_fmt::FmtMatcher::new(&fmt_string, field_names.as_slice())
+        .map_err(|e| vec![syn::Error::new(Span::call_site(), e)])?;
 
     let field_names = gen_static_str_slice(field_names.as_slice());
 

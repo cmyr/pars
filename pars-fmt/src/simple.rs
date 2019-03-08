@@ -27,7 +27,7 @@
 
 use std::ops::Range;
 
-use crate::error::{Error, MatchError};
+use crate::error::{FormatError, MatchError};
 
 #[derive(Debug)]
 enum State {
@@ -56,7 +56,7 @@ impl<'a> Parser<'a> {
         Parser { source, pos: 0, state: State::Ready, tokens: Vec::new() }
     }
 
-    fn run(&mut self) -> Result<(), Error> {
+    fn run(&mut self) -> Result<(), FormatError> {
         loop {
             match self.state {
                 State::Ready => self.advance()?,
@@ -68,15 +68,23 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
-    fn advance(&mut self) -> Result<(), Error> {
+    fn advance(&mut self) -> Result<(), FormatError> {
         let (pos, next_state) = match self.source.as_bytes().get(self.pos) {
             Some(&b'#') if self.source.as_bytes().get(self.pos + 1) == Some(&b'{') => {
                 if self.source.as_bytes().get(self.pos + 2).is_none() {
-                    return Err("expected identifer, found EOF");
+                    return Err(FormatError::new(
+                        self.source,
+                        self.source.len()..self.source.len(),
+                        "expected identifier, found end of string",
+                    ));
                 }
 
-                if let Some(Token::Field(_)) = self.tokens.last() {
-                    return Err("fields must be separated by non-field characters");
+                if let Some(Token::Field(prev)) = self.tokens.last() {
+                    return Err(FormatError::new(
+                        self.source,
+                        prev.start..self.pos + 2,
+                        "fields must be separated by non-field characters",
+                    ));
                 }
 
                 (self.pos + 2, State::InField)
@@ -91,7 +99,7 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
-    fn take_field(&mut self) -> Result<(), Error> {
+    fn take_field(&mut self) -> Result<(), FormatError> {
         let field_end = self.source.as_bytes()[self.pos..].iter().position(|b| b == &b'}');
         match field_end {
             Some(end) => {
@@ -101,11 +109,15 @@ impl<'a> Parser<'a> {
                 self.state = State::Ready;
                 Ok(())
             }
-            None => Err("expected '}' found end of string"),
+            None => Err(FormatError::new(
+                self.source,
+                self.pos..self.source.len(),
+                "expected '}' found end of string",
+            )),
         }
     }
 
-    fn take_separator(&mut self, start_pos: usize) -> Result<(), Error> {
+    fn take_separator(&mut self, start_pos: usize) -> Result<(), FormatError> {
         let end_pos = self.pos
             + self.source.as_bytes()[self.pos..]
                 .iter()
@@ -124,7 +136,7 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
-    fn into_matcher(self) -> Result<FmtMatcher<'a>, Error> {
+    fn into_matcher(self) -> Result<FmtMatcher<'a>, FormatError> {
         let tokens = self.tokens;
         let lead_separator =
             if let Some(Token::Separator(s)) = tokens.first() { Some(s.clone()) } else { None };
@@ -140,8 +152,11 @@ impl<'a> Parser<'a> {
                 (Some(Token::Field(field)), None) => {
                     fmt_fields.push((field, self.source.len()..self.source.len()))
                 }
+                (Some(Token::Field(rng)), _) | (Some(Token::Separator(rng)), _) => {
+                    return Err(FormatError::new(self.source, rng, "unexpected token"));
+                }
                 (None, None) => break,
-                _other => return Err("unexpected token"),
+                (None, Some(_)) => unreachable!(),
             }
         }
 
@@ -178,7 +193,7 @@ pub struct FmtMatch<'a, 'b> {
 }
 
 impl<'a> FmtMatcher<'a> {
-    pub fn new<S: AsRef<str>>(fmt_string: &'a str, _fields: &[S]) -> Result<Self, Error> {
+    pub fn new<S: AsRef<str>>(fmt_string: &'a str, _fields: &[S]) -> Result<Self, FormatError> {
         let mut parser = Parser::new(fmt_string);
         parser.run()?;
         parser.into_matcher()
@@ -227,8 +242,8 @@ impl<'a> FmtMatcher<'a> {
 }
 
 impl<'a, 'b> FmtMatch<'a, 'b> {
-    pub fn get_match(&'a self, idx: usize) -> Result<&'a str, Error> {
-        let range = self.values.get(idx).ok_or("no match for index")?;
+    pub fn get_match(&'a self, idx: usize) -> Result<&'a str, MatchError> {
+        let range = self.values.get(idx).expect("all indices should be validated by now");
         Ok(&self.source[range.clone()])
     }
 }
