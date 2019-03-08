@@ -29,6 +29,7 @@ use std::ops::Range;
 
 pub type Error = &'static str;
 
+#[derive(Debug)]
 enum State {
     Ready,
     InField,
@@ -85,6 +86,8 @@ impl<'a> Parser<'a> {
             None => (self.pos, State::Finished),
         };
 
+        dbg!(&pos);
+        dbg!(&next_state);
         self.pos = pos;
         self.state = next_state;
         Ok(())
@@ -105,13 +108,13 @@ impl<'a> Parser<'a> {
     }
 
     fn take_separator(&mut self, start_pos: usize) -> Result<(), Error> {
-        let end_pos = start_pos
+        let end_pos = self.pos
             + self.source.as_bytes()[self.pos..]
                 .iter()
                 .position(|b| b == &b'#')
                 .unwrap_or(self.source.len() - self.pos);
 
-        let sep_string = self.source[start_pos..end_pos].to_string();
+        let sep_string = self.source[dbg!(start_pos..end_pos)].to_string();
         assert!(!sep_string.is_empty());
         if let Some(Token::Separator(ref mut existing)) = self.tokens.last_mut() {
             existing.push_str(&sep_string);
@@ -277,5 +280,11 @@ mod tests {
         parser.run().unwrap();
         let matcher = parser.into_matcher().unwrap();
         assert!(matcher.try_match("4 5 hello").is_err());
+    }
+
+    #[test]
+    fn separator_includes_hash() {
+        let matcher = FmtMatcher::new("##{num}: (#{count})", &["hi"]).unwrap();
+        assert!(matcher.try_match("#5: (some)").is_ok())
     }
 }
