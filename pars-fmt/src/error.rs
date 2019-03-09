@@ -7,7 +7,7 @@ use std::ops::Range;
 /// This is a convenience; these errors will always occur at
 /// compile time, and this lets us give better diagnostics.
 #[doc(hidden)]
-#[derive(Debug, PartialEq)]
+#[derive(PartialEq)]
 pub struct FormatError {
     /// The format string
     source: String,
@@ -24,6 +24,12 @@ impl FormatError {
         S2: Into<String>,
     {
         FormatError { source: source.into(), span, msg: msg.into() }
+    }
+}
+
+impl fmt::Debug for FormatError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Display::fmt(self, f)
     }
 }
 

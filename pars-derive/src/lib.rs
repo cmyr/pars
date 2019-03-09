@@ -257,9 +257,7 @@ fn generate_fmt_block(
 fn gen_static_str_slice(inp: &[String]) -> TokenStream {
     let mut out = TokenStream::new();
     for _s in inp {
-        out.extend(
-            quote! { stringify!(_s), }
-        );
+        out.extend(quote! { #_s, });
     }
     quote! {
         &[#out]

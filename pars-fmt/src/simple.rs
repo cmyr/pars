@@ -44,6 +44,15 @@ enum Token {
     Separator(Range<usize>),
 }
 
+impl Token {
+    fn is_field(&self) -> bool {
+        match self {
+            Token::Field(_) => true,
+            Token::Separator(_) => false,
+        }
+    }
+}
+
 struct Parser<'a> {
     source: &'a str,
     pos: usize,
@@ -136,11 +145,40 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
-    fn into_matcher(self) -> Result<FmtMatcher<'a>, FormatError> {
+    fn validate_fields(&self, fields: &[String]) -> Result<(), FormatError> {
+        let num_fields = self.tokens.iter().filter(|t| t.is_field()).count();
+
+        if fields.len() != num_fields {
+            return Err(FormatError::new(
+                self.source,
+                0..self.source.len(),
+                format!("expected {} fields, found {}", fields.len(), num_fields),
+            ));
+        }
+
+        for field_range in self.tokens.iter().filter_map(|t| match t {
+            Token::Separator(_) => None,
+            Token::Field(ref rng) => Some(rng),
+        }) {
+            let field = &self.source[field_range.clone()];
+            if fields.iter().find(|s| *s == field).is_none() {
+                return Err(FormatError::new(
+                    self.source,
+                    field_range.clone(),
+                    format!("unexpected field, expected one of {}", fields.join(", ")),
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    fn into_matcher(self, fields: Vec<String>) -> Result<FmtMatcher<'a>, FormatError> {
+        self.validate_fields(&fields)?;
         let tokens = self.tokens;
         let lead_separator =
             if let Some(Token::Separator(s)) = tokens.first() { Some(s.clone()) } else { None };
 
+        //let mut fmt_fields = vec![(0..0, 0..0); fields.len()];
         let mut fmt_fields = Vec::new();
         let skip = if lead_separator.is_some() { 1 } else { 0 };
         let mut iter = tokens.into_iter().skip(skip);
@@ -160,7 +198,7 @@ impl<'a> Parser<'a> {
             }
         }
 
-        Ok(FmtMatcher { source: self.source, lead_separator, fmt_fields, fields: Vec::new() })
+        Ok(FmtMatcher { source: self.source, lead_separator, fmt_fields, fields })
     }
 
     #[cfg(test)]
@@ -193,10 +231,12 @@ pub struct FmtMatch<'a, 'b> {
 }
 
 impl<'a> FmtMatcher<'a> {
-    pub fn new<S: AsRef<str>>(fmt_string: &'a str, _fields: &[S]) -> Result<Self, FormatError> {
+    pub fn new<S: AsRef<str>>(fmt_string: &'a str, fields: &[S]) -> Result<Self, FormatError> {
         let mut parser = Parser::new(fmt_string);
         parser.run()?;
-        parser.into_matcher()
+        //TODO: we should be able to have this be an array or something
+        let fields = fields.iter().map(|s| s.as_ref().to_string()).collect::<Vec<_>>();
+        parser.into_matcher(fields)
     }
 
     pub fn try_match<'b>(&'a self, source: &'b str) -> Result<FmtMatch<'a, 'b>, MatchError> {
@@ -268,8 +308,9 @@ mod tests {
     #[test]
     fn make_matcher() {
         let mut parser = Parser::new("#{x}, #{y} #{width} #{height}");
+        let fields = ["x", "y", "width", "height"].into_iter().map(|s| String::from(*s)).collect();
         parser.run().unwrap();
-        let matcher = parser.into_matcher().unwrap();
+        let matcher = parser.into_matcher(fields).unwrap();
         assert!(matcher.lead_separator.is_none());
         assert_eq!(matcher.fmt_fields.len(), 4);
 
@@ -282,13 +323,38 @@ mod tests {
     fn match_should_fail() {
         let mut parser = Parser::new("#{x}, #{y} #{width} #{height}");
         parser.run().unwrap();
-        let matcher = parser.into_matcher().unwrap();
+        let fields = ["x", "y", "width", "height"].into_iter().map(|s| String::from(*s)).collect();
+        let matcher = parser.into_matcher(fields).unwrap();
         matcher.try_match("4 5 hello").unwrap();
     }
 
     #[test]
     fn separator_includes_hash() {
-        let matcher = FmtMatcher::new("##{num}: (#{count})", &["hi"]).unwrap();
+        let matcher = FmtMatcher::new("##{num}: (#{count})", &["num", "count"]).unwrap();
         assert!(matcher.try_match("#5: (some)").is_ok())
+    }
+
+    #[test]
+    #[should_panic(expected = "expected 3 fields")]
+    fn missing_field_should_fail() {
+        let fmt_str = "#{x} #{y}";
+        let fields = &["x", "y", "z"];
+        let _ = FmtMatcher::new(fmt_str, fields).unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "expected 1 fields")]
+    fn extra_field_should_fail() {
+        let fmt_str = "#{x} #{y}";
+        let fields = &["x"];
+        let _ = FmtMatcher::new(fmt_str, fields).unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "unexpected field")]
+    fn unexpected_field_should_fail() {
+        let fmt_str = "#{x} #{y}";
+        let fields = &["x", "NO"];
+        let _ = FmtMatcher::new(fmt_str, fields).unwrap();
     }
 }
