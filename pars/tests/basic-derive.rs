@@ -65,3 +65,16 @@ fn re_derive_from_str() {
     let named_pos: NamedPos2 = "hello: (32, -420)".parse().unwrap();
     assert_eq!(named_pos, NamedPos2 { name: "hello".into(), x: 32, y: -420 });
 }
+
+#[test]
+fn named_fields_out_of_order() {
+    #[pars::fmt("#{name}: #{age}")]
+    #[derive(Debug, PartialEq)]
+    struct Person {
+        age: u32,
+        name: String,
+    }
+
+    let someone = Person::pars_from_str("Bactra: 42").unwrap();
+    assert_eq!(someone, Person {age: 42, name: "Bactra".into()})
+}

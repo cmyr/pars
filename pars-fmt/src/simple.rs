@@ -145,6 +145,7 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
+    /// Check that fields in the struct match up with fields in the fmt string.
     fn validate_fields(&self, fields: &[String]) -> Result<(), FormatError> {
         let num_fields = self.tokens.iter().filter(|t| t.is_field()).count();
 
@@ -174,12 +175,11 @@ impl<'a> Parser<'a> {
 
     fn into_matcher(self, fields: Vec<String>) -> Result<FmtMatcher<'a>, FormatError> {
         self.validate_fields(&fields)?;
-        let tokens = self.tokens;
+        let Parser { tokens, source, .. } = self;
         let lead_separator =
             if let Some(Token::Separator(s)) = tokens.first() { Some(s.clone()) } else { None };
 
-        //let mut fmt_fields = vec![(0..0, 0..0); fields.len()];
-        let mut fmt_fields = Vec::new();
+        let mut fmt_fields = Vec::with_capacity(fields.len());
         let skip = if lead_separator.is_some() { 1 } else { 0 };
         let mut iter = tokens.into_iter().skip(skip);
         loop {
@@ -240,8 +240,12 @@ impl<'a> FmtMatcher<'a> {
     }
 
     pub fn try_match<'b>(&'a self, source: &'b str) -> Result<FmtMatch<'a, 'b>, MatchError> {
-        let mut values = Vec::new();
+        // we insert the field locations in the order they appear in the struct declaration,
+        // so we need to have a vec we can just index into.
+        let mut values = vec![0..0; self.fmt_fields.len()];
+        // current position in the source string.
         let mut pos = 0;
+        // we track this for better diagnostics.
         let mut current_sep = 0;
 
         if let Some(ref head) = self.lead_separator {
@@ -253,22 +257,28 @@ impl<'a> FmtMatcher<'a> {
             current_sep += 1;
         }
 
-        for (_field, sep) in self.fmt_fields.iter() {
+        for (field, sep) in self.fmt_fields.iter() {
             let sep_string = &self.source[sep.clone()];
+            let field_str = &self.source[field.clone()];
+            let field_idx = self
+                .fields
+                .iter()
+                .position(|f| f == field_str)
+                .expect("all fields have been validated");
 
             if pos == source.len() {
                 return Err(MatchError::InputExhausted);
             }
             if sep.start == sep.end {
                 // take all remaining string
-                values.push(pos..source.len());
+                values[field_idx] = pos..source.len();
                 pos = source.len();
                 continue;
             }
 
             match &source[pos..].find(sep_string) {
                 Some(idx) => {
-                    values.push(pos..pos + idx);
+                    values[field_idx] = pos..pos + idx;
                     pos = pos + idx + sep.len();
                 }
                 None => return Err(MatchError::missing_separator(current_sep, sep_string)),
@@ -356,5 +366,16 @@ mod tests {
         let fmt_str = "#{x} #{y}";
         let fields = &["x", "NO"];
         let _ = FmtMatcher::new(fmt_str, fields).unwrap();
+    }
+
+    #[test]
+    fn fields_out_of_order() {
+        let fmt_str = "#{x} #{y}";
+        let fields = &["y", "x"];
+        let matcher = FmtMatcher::new(fmt_str, fields).unwrap();
+
+        let mtch = matcher.try_match("hi mom").unwrap();
+        assert_eq!(mtch.get_match(0).unwrap(), "mom");
+        assert_eq!(mtch.get_match(1).unwrap(), "hi");
     }
 }
