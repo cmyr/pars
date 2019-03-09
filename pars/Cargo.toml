@@ -14,3 +14,9 @@ path = "../pars-derive"
 [dependencies.pars-fmt]
 path = "../pars-fmt"
 
+[dev-dependencies]
+criterion = "0.2"
+
+[[bench]]
+name = "compare"
+harness = false
