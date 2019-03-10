@@ -240,6 +240,27 @@ impl<'a> FmtMatcher<'a> {
         parser.into_matcher(fields)
     }
 
+    pub fn get_lead_separator_str(&'a self) -> &'a str {
+        self.lead_separator.clone().map(|r| &self.source[r]).unwrap_or("")
+    }
+
+    /// Creates a vector of ordered separator strings and the index,
+    /// into the ordered field names, of the item corresponding to that separator.
+    pub fn make_separator_indices(&'a self) -> Vec<(&'a str, usize)> {
+        let mut result = Vec::new();
+        for (field, sep) in self.fmt_fields.iter() {
+            let sep_string = &self.source[sep.clone()];
+            let field_str = &self.source[field.clone()];
+            let field_idx = self
+                .fields
+                .iter()
+                .position(|f| f == field_str)
+                .expect("all fields have been validated");
+            result.push((sep_string, field_idx));
+        }
+        result
+    }
+
     pub fn try_match<'b>(&'a self, source: &'b str) -> Result<FmtMatch<'a, 'b>, MatchError<'a>> {
         // we insert the field locations in the order they appear in the struct declaration,
         // so we need to have a vec we can just index into.
@@ -258,19 +279,12 @@ impl<'a> FmtMatcher<'a> {
             current_sep += 1;
         }
 
-        for (field, sep) in self.fmt_fields.iter() {
-            let sep_string = &self.source[sep.clone()];
-            let field_str = &self.source[field.clone()];
-            let field_idx = self
-                .fields
-                .iter()
-                .position(|f| f == field_str)
-                .expect("all fields have been validated");
-
+        let separators = self.make_separator_indices();
+        for (sep_string, field_idx) in separators {
             if pos == source.len() {
                 return Err(MatchError::InputExhausted);
             }
-            if sep.start == sep.end {
+            if sep_string.is_empty() {
                 // take all remaining string
                 values[field_idx] = pos..source.len();
                 pos = source.len();
@@ -280,7 +294,7 @@ impl<'a> FmtMatcher<'a> {
             match &source[pos..].find(sep_string) {
                 Some(sep_start) => {
                     values[field_idx] = pos..pos + sep_start;
-                    pos = pos + sep_start + sep.len();
+                    pos = pos + sep_start + sep_string.len();
                 }
                 None => return Err(MatchError::missing_separator(current_sep, sep_string)),
             }

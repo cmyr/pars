@@ -108,8 +108,8 @@ impl<'a> RegexMatcher<'a> {
 }
 
 impl<'a, 'b> RegexMatch<'a, 'b> {
-    pub fn get(&self, idx: usize) -> &'b str {
-        self.0.get(idx + 1).expect("all indicies have been validated").as_str()
+    pub fn get(&self, idx: usize) -> Option<&'b str> {
+        Some(self.0.get(idx + 1).expect("all indicies have been validated").as_str())
     }
 }
 

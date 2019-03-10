@@ -52,7 +52,7 @@
 //! }
 //! ```
 
-#![recursion_limit = "128"]
+#![recursion_limit = "256"]
 
 extern crate proc_macro;
 #[macro_use]
@@ -113,6 +113,7 @@ fn generate_impls(mode: Mode, cont: &Container) -> Result<TokenStream, Vec<syn::
     };
 
     let mut impl_block = quote! {
+
         #orig
 
         impl ::pars::ParsFromStr for #ident {
@@ -193,7 +194,7 @@ fn generate_re_block(
     };
 
     let _ = pattern.map_err(|e| vec![syn::Error::new(Span::call_site(), e.to_string())])?;
-    let field_names = gen_static_str_slice(field_names.as_slice());
+    let field_names = gen_static_array(field_names.as_slice());
 
     let re_block = quote! {
 
@@ -214,6 +215,7 @@ fn generate_re_block(
     Ok(re_block)
 }
 
+#[allow(unused_variables)]
 fn generate_fmt_block(
     attrs: &AttributeArgs,
     cont: &Container,
@@ -231,37 +233,72 @@ fn generate_fmt_block(
         })
         .collect::<Vec<_>>();
     let fmt_string = get_attr_string(attrs).map_err(|e| vec![e])?;
-    let _num_fields = cont.data.num_fields();
+    let num_fields = cont.data.num_fields();
 
     // check that the fmt string is valid
-    let _ = ::pars_fmt::FmtMatcher::new(&fmt_string, field_names.as_slice())
+    let matcher = ::pars_fmt::FmtMatcher::new(&fmt_string, field_names.as_slice())
         .map_err(|e| vec![syn::Error::new(Span::call_site(), e)])?;
 
-    let field_names = gen_static_str_slice(field_names.as_slice());
+    let field_names = gen_static_array(field_names.as_slice());
+    let lead_separator = matcher.get_lead_separator_str();
+    let separator_indices = gen_static_array_2tuple(&matcher.make_separator_indices());
 
     let fmt_block = quote! {
-        let field_names = #field_names;
-        let field_names = field_names.to_vec();
+        let lead_separator = #lead_separator;
+        let separator_indices = #separator_indices;
 
-        static INSTANCE: ::pars::OnceCell<::pars::FmtMatcher> = ::pars::OnceCell::INIT;
-        let pat = INSTANCE.get_or_init(|| {
-            ::pars::FmtMatcher::new(#fmt_string, #field_names).unwrap()
-        });
+        let mut pos = 0;
+        let mut current_sep = 0;
+        let mut ordered_matches = [""; #num_fields];
 
-        let ordered_matches = pat.try_match(src)?;
+        match src.find(lead_separator) {
+            Some(0) => pos = lead_separator.len(),
+            _ => return Err(::pars::MatchError::missing_separator(current_sep, lead_separator)),
+        };
+
+        for (separator, field_idx) in &separator_indices {
+            if pos == src.len() {
+                return Err(::pars::MatchError::InputExhausted);
+            }
+            if separator.is_empty() {
+                ordered_matches[*field_idx] = &src[pos..];
+                pos = src.len();
+                continue;
+            }
+
+            match src[pos..].find(separator) {
+                Some(idx) => {
+                    ordered_matches[*field_idx] = &src[pos..pos + idx];
+                    pos = pos + idx + separator.len();
+                }
+                None => return Err(::pars::MatchError::missing_separator(current_sep, separator)),
+            }
+            current_sep += 1;
+        }
     };
     Ok(fmt_block)
 }
 
-/// Creates a static slice of &'static str from a slice of owned Strings.
-fn gen_static_str_slice(inp: &[String]) -> TokenStream {
+/// Generates tokens for a static array from a slice.
+fn gen_static_array<T: quote::ToTokens>(inp: &[T]) -> TokenStream {
     let mut out = TokenStream::new();
-    for _s in inp {
-        out.extend(quote! { #_s, });
+    for item in inp {
+        out.extend(quote! { #item, });
     }
-    quote! {
-        &[#out]
+    quote! { [#out] }
+}
+
+/// Generates tokens for a static array from a slice of 2tuples.
+fn gen_static_array_2tuple<T1, T2>(inp: &[(T1, T2)]) -> TokenStream
+where
+    T1: quote::ToTokens,
+    T2: quote::ToTokens,
+{
+    let mut out = TokenStream::new();
+    for (one, two) in inp {
+        out.extend(quote! { (#one, #two), });
     }
+    quote! { [#out] }
 }
 
 fn gen_struct_body<'a>(cont: &Container) -> TokenStream {
@@ -271,8 +308,8 @@ fn gen_struct_body<'a>(cont: &Container) -> TokenStream {
         let ty = field.ty;
 
         out.extend(quote! {
-            #ident: ordered_matches.get(#i).parse()
-            .map_err(|e| ::pars::MatchError::field_failed(stringify!(#ident), stringify!(#ty), ordered_matches.get(#i).to_string()))?,
+            #ident: ordered_matches.get(#i).unwrap().parse()
+.map_err(|e| ::pars::MatchError::field_failed(stringify!(#ident), stringify!(#ty), ordered_matches.get(#i).unwrap().to_string()))?,
         });
     }
 

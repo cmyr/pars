@@ -59,7 +59,7 @@ pub enum MatchError<'a> {
 }
 
 impl<'a> MatchError<'a> {
-    pub(crate) fn missing_separator(idx: usize, string: &'a str) -> Self {
+    pub fn missing_separator(idx: usize, string: &'a str) -> Self {
         MatchError::MissingSeparator { idx, string }
     }
 
