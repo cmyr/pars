@@ -29,12 +29,6 @@ impl FormatError {
 
 impl fmt::Debug for FormatError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        fmt::Display::fmt(self, f)
-    }
-}
-
-impl fmt::Display for FormatError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}\n", self.msg)?;
         write!(f, "       {}\n       ", self.source)?;
         for i in 0..self.source.len() {
@@ -42,6 +36,16 @@ impl fmt::Display for FormatError {
             write!(f, "{}", chr)?;
         }
         Ok(())
+    }
+}
+
+impl fmt::Display for FormatError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "Failed to parse \"{}\": {} ({}..{})",
+            self.source, self.msg, self.span.start, self.span.end
+        )
     }
 }
 

@@ -159,7 +159,7 @@ impl<'a> Parser<'a> {
 
         for field_range in self.tokens.iter().filter_map(|t| match t {
             Token::Separator(_) => None,
-            Token::Field(ref rng) => Some(rng),
+            Token::Field(ref range) => Some(range),
         }) {
             let field = &self.source[field_range.clone()];
             if fields.iter().find(|s| *s == field).is_none() {
@@ -176,8 +176,10 @@ impl<'a> Parser<'a> {
     fn into_matcher(self, fields: Vec<String>) -> Result<FmtMatcher<'a>, FormatError> {
         self.validate_fields(&fields)?;
         let Parser { tokens, source, .. } = self;
-        let lead_separator =
-            if let Some(Token::Separator(s)) = tokens.first() { Some(s.clone()) } else { None };
+        let lead_separator = match tokens.first() {
+            Some(Token::Separator(s)) => Some(s.clone()),
+            _ => None,
+        };
 
         let mut fmt_fields = Vec::with_capacity(fields.len());
         let skip = if lead_separator.is_some() { 1 } else { 0 };
@@ -188,17 +190,17 @@ impl<'a> Parser<'a> {
                     fmt_fields.push((field, sep))
                 }
                 (Some(Token::Field(field)), None) => {
-                    fmt_fields.push((field, self.source.len()..self.source.len()))
+                    fmt_fields.push((field, source.len()..source.len()))
                 }
-                (Some(Token::Field(rng)), _) | (Some(Token::Separator(rng)), _) => {
-                    return Err(FormatError::new(self.source, rng, "unexpected token"));
+                (Some(Token::Field(range)), _) | (Some(Token::Separator(range)), _) => {
+                    return Err(FormatError::new(source, range, "unexpected token"));
                 }
                 (None, None) => break,
                 (None, Some(_)) => unreachable!(),
             }
         }
 
-        Ok(FmtMatcher { source: self.source, lead_separator, fmt_fields, fields })
+        Ok(FmtMatcher { source, lead_separator, fmt_fields, fields })
     }
 
     #[cfg(test)]
@@ -206,14 +208,13 @@ impl<'a> Parser<'a> {
         self.tokens
             .iter()
             .map(|t| match t {
-                Token::Field(rng) => &self.source[rng.clone()],
-                Token::Separator(rng) => &self.source[rng.clone()],
+                Token::Field(range) => &self.source[range.clone()],
+                Token::Separator(range) => &self.source[range.clone()],
             })
             .collect()
     }
 }
 
-#[allow(dead_code)]
 pub struct FmtMatcher<'a> {
     source: &'a str,
     lead_separator: Option<Range<usize>>,
@@ -277,9 +278,9 @@ impl<'a> FmtMatcher<'a> {
             }
 
             match &source[pos..].find(sep_string) {
-                Some(idx) => {
-                    values[field_idx] = pos..pos + idx;
-                    pos = pos + idx + sep.len();
+                Some(sep_start) => {
+                    values[field_idx] = pos..pos + sep_start;
+                    pos = pos + sep_start + sep.len();
                 }
                 None => return Err(MatchError::missing_separator(current_sep, sep_string)),
             }
