@@ -5,3 +5,4 @@ authors = ["Colin Rofls <colin@cmyr.net>", "Galen O'Sullivan <galenosullivan@gma
 edition = "2018"
 
 [dependencies]
+regex = "1.0"

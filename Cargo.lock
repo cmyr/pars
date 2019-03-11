@@ -277,6 +277,9 @@ dependencies = [
 [[package]]
 name = "pars-fmt"
 version = "0.1.0"
+dependencies = [
+ "regex 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+]
 
 [[package]]
 name = "proc-macro2"

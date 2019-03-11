@@ -2,6 +2,7 @@
 //! to avoid circular dependencies.
 
 mod error;
+mod regex;
 mod simple;
 
 pub use error::{FormatError, MatchError};
