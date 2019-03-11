@@ -9,26 +9,29 @@ use std::ops::Range;
 #[doc(hidden)]
 #[derive(Debug, PartialEq)]
 pub struct FormatError {
-    inp: String,
+    /// The format string
+    source: String,
+    /// The region containing the error
     span: Range<usize>,
+    /// A diagnostic message to display to the user.
     msg: String,
 }
 
 impl FormatError {
-    pub fn new<S1, S2>(inp: S1, span: Range<usize>, msg: S2) -> Self
+    pub fn new<S1, S2>(source: S1, span: Range<usize>, msg: S2) -> Self
     where
         S1: Into<String>,
         S2: Into<String>,
     {
-        FormatError { inp: inp.into(), span, msg: msg.into() }
+        FormatError { source: source.into(), span, msg: msg.into() }
     }
 }
 
 impl fmt::Display for FormatError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}\n", self.msg)?;
-        write!(f, "       {}\n       ", self.inp)?;
-        for i in 0..self.inp.len() {
+        write!(f, "       {}\n       ", self.source)?;
+        for i in 0..self.source.len() {
             let chr = if self.span.start <= i && self.span.end > i { '^' } else { ' ' };
             write!(f, "{}", chr)?;
         }
@@ -39,10 +42,6 @@ impl fmt::Display for FormatError {
 /// Errors that can occur during parsing.
 #[derive(Debug)]
 pub enum MatchError<'a> {
-    IncorrectFields {
-        found: Vec<String>,
-        expected: Vec<String>,
-    },
     MissingSeparator {
         idx: usize,
         string: &'a str,
@@ -65,8 +64,8 @@ impl<'a> fmt::Display for MatchError<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             MatchError::InputExhausted => write!(f, "input exhausted"),
-            MatchError::IncorrectFields { .. } => write!(f, "incorrect fields"),
             MatchError::MissingSeparator { idx, string } => {
+                //TODO: we could do fancy diagnostic errors here
                 write!(f, "missing separator at index {}, text: '{}'", idx, string)
             }
             MatchError::FieldFailed { expected_type, member, inner } => {
