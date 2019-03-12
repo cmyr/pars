@@ -233,9 +233,11 @@ fn generate_fmt_block(
     let field_names = cont.data.to_field_names().unwrap_or_default();
     let field_names = field_names.iter().map(|s| s.as_str()).collect::<Vec<_>>();
 
-    // check that the fmt string is valid
-    let matcher = ::pars_fmt::FmtMatcher::new_named(&fmt_string, field_names.as_slice())
-        .map_err(|e| vec![syn::Error::new(Span::call_site(), e)])?;
+    let matcher = match field_names {
+        ref names if !names.is_empty() => ::pars_fmt::FmtMatcher::new_named(&fmt_string, &names),
+        _else => ::pars_fmt::FmtMatcher::new_unnamed(&fmt_string, num_fields),
+    }
+    .map_err(|e| vec![syn::Error::new(Span::call_site(), e)])?;
 
     let lead_separator = matcher.get_lead_separator_str();
     let separator_indices = gen_static_array_2tuple(&matcher.make_separator_indices());
@@ -313,8 +315,17 @@ fn gen_struct_body<'a>(cont: &Container) -> TokenStream {
     quote! {{#out}}
 }
 
-fn gen_tuple_body<'a>(_mode: &Mode, _fields: &[Field<'a>]) -> TokenStream {
-    unimplemented!()
+fn gen_tuple_body<'a>(_mode: &Mode, fields: &[Field<'a>]) -> TokenStream {
+    let mut out = TokenStream::new();
+    for (i, field) in fields.iter().enumerate() {
+        let ty = field.ty;
+        out.extend(quote! {
+            ordered_matches[#i].parse()
+            .map_err(|e| pars::MatchError::field_failed(stringify!(#i), stringify!(#ty), ordered_matches[#i].to_string()))?,
+        });
+    }
+
+    quote! {(#out)}
 }
 
 /// "my string".
