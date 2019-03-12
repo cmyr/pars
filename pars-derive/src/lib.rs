@@ -226,10 +226,14 @@ fn generate_fmt_block(
         panic!("pars::fmt only works with structs");
     }
 
-    let field_names = cont.data.all_fields().filter_map(|f| match &f.member {
-        syn::Member::Named(ident) => Some(ident.to_string()),
-        _ => None,
-    }).collect::<Vec<_>>();
+    let field_names = cont
+        .data
+        .all_fields()
+        .filter_map(|f| match &f.member {
+            syn::Member::Named(ident) => Some(ident.to_string()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
     let fmt_string = get_attr_string(attrs).map_err(|e| vec![e])?;
     let num_fields = cont.data.num_fields();
 
@@ -289,64 +293,7 @@ fn get_attr_string(args: &AttributeArgs) -> Result<String, syn::Error> {
     }
 }
 
-/// Returns (variable names, nonvariable strings).
-///
-/// There will always be one more nonvariables than variables (one at the beginning and one at the
-/// end of the string). They may be empty.
-///
-/// Example CSV-ish could be
-/// ```ignore
-/// assert_eq!(parse_vars("$name, $date, $favorite_color"),
-///            (vec!["name","date","favorite_color"],vec!["",", ",", ",""]));
-/// ```
-#[allow(dead_code)]
-fn parse_vars(s: &str) -> (Vec<&str>, Vec<&str>) {
-    let mut iter = s.split('$');
-
-    let (mut variables, mut nonvariables) = (Vec::new(), Vec::new());
-
-    let initial_nonvariable = iter.next().expect("nonempty pars format");
-    nonvariables.push(initial_nonvariable);
-
-    for s in iter {
-        let variable_name_end = s.find(|c: char| !c.is_alphanumeric());
-        let (variable_name, nonvariable) = variable_name_end
-            .map(|idx| s.split_at(idx))
-            // None means we're at end of string or another variable immediately follows (eg
-            // "$a$b") (likely source of user error? in that case) todo maybe
-            .unwrap_or((s, &""));
-
-        variables.push(variable_name);
-        nonvariables.push(nonvariable);
-    }
-
-    (variables, nonvariables)
-}
-
 fn to_compile_errors(errors: Vec<syn::Error>) -> proc_macro2::TokenStream {
     let compile_errors = errors.iter().map(syn::Error::to_compile_error);
     quote!(#(#compile_errors)*)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parse_vars_two_following() {
-        assert_eq!(parse_vars("$a$b"), (vec!["a", "b"], vec!["", "", ""]));
-    }
-
-    #[test]
-    fn parse_vars_two_space_separated() {
-        assert_eq!(parse_vars("$a $b"), (vec!["a", "b"], vec!["", " ", ""]));
-    }
-
-    #[test]
-    fn parse_vars_complexish() {
-        assert_eq!(
-            parse_vars("$name& $date* $a:$b"),
-            (vec!["name", "date", "a", "b"], vec!["", "& ", "* ", ":", ""])
-        );
-    }
 }

@@ -2,16 +2,14 @@
 extern crate criterion;
 extern crate pars;
 
-use std::str::FromStr;
 use pars::ParsFromStr;
-
+use std::str::FromStr;
 
 use criterion::{Benchmark, Criterion};
 
 static SAMPLE_DATA: &'static str = include_str!("../resources/aoc_2018_day3.txt");
 
 fn fmt_parse() -> usize {
-
     #[pars::fmt("##{id} @ #{x},#{y}: #{w}x#{h}")]
     #[allow(dead_code)]
     struct ClaimFmt {
@@ -22,13 +20,10 @@ fn fmt_parse() -> usize {
         h: usize,
     }
 
-    SAMPLE_DATA.lines()
-        .map(|s| ClaimFmt::pars_from_str(s).unwrap())
-        .count()
+    SAMPLE_DATA.lines().map(|s| ClaimFmt::pars_from_str(s).unwrap()).count()
 }
 
 fn re_parse() -> usize {
-
     #[pars::re(r"#(.+) @ (.+),(.+): (.+)x(.+)")]
     #[allow(dead_code)]
     struct ClaimRe {
@@ -38,13 +33,10 @@ fn re_parse() -> usize {
         w: usize,
         h: usize,
     }
-    SAMPLE_DATA.lines()
-        .map(|s| ClaimRe::pars_from_str(s).unwrap())
-        .count()
+    SAMPLE_DATA.lines().map(|s| ClaimRe::pars_from_str(s).unwrap()).count()
 }
 
 fn manual_parse() -> usize {
-
     #[allow(dead_code)]
     struct Claim {
         id: usize,
@@ -70,9 +62,7 @@ fn manual_parse() -> usize {
             Ok(Claim { id, x, y, w, h })
         }
     }
-    SAMPLE_DATA.lines()
-        .map(|s| s.parse::<Claim>().unwrap())
-        .count()
+    SAMPLE_DATA.lines().map(|s| s.parse::<Claim>().unwrap()).count()
 }
 
 fn bench_compare(c: &mut Criterion) {
@@ -80,10 +70,9 @@ fn bench_compare(c: &mut Criterion) {
         "Parsing",
         Benchmark::new("Manual", |b| b.iter(|| manual_parse()))
             .with_function("pars::fmt", |b| b.iter(|| fmt_parse()))
-            .with_function("pars::re", |b| b.iter(|| re_parse()))
+            .with_function("pars::re", |b| b.iter(|| re_parse())),
     );
 }
-
 
 criterion_group!(benches, bench_compare);
 criterion_main!(benches);

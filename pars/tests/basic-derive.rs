@@ -3,7 +3,6 @@ use pars::ParsFromStr;
 
 #[test]
 fn regex_parse_smoke_test() {
-
     #[pars::re(r"(\w+): \(([+\-\d]+), ([+\-\d]+)\)")]
     #[derive(Debug, PartialEq)]
     struct NamedPos2 {
@@ -76,5 +75,5 @@ fn named_fields_out_of_order() {
     }
 
     let someone = Person::pars_from_str("Bactra: 42").unwrap();
-    assert_eq!(someone, Person {age: 42, name: "Bactra".into()})
+    assert_eq!(someone, Person { age: 42, name: "Bactra".into() })
 }
