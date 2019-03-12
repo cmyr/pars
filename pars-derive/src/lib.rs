@@ -115,8 +115,8 @@ fn generate_impls(mode: Mode, cont: &Container) -> Result<TokenStream, Vec<syn::
     let mut impl_block = quote! {
         #orig
 
-        impl pars::ParsFromStr for #ident {
-            fn pars_from_str(src: &str) -> Result<Self, pars::MatchError<'static>> {
+        impl ::pars::ParsFromStr for #ident {
+            fn pars_from_str(src: &str) -> Result<Self, ::pars::MatchError<'static>> {
 
                 #mode_block
 
@@ -161,10 +161,10 @@ fn maybe_generate_from_str(ident: &syn::Ident, mode: &Mode) -> TokenStream {
 fn generate_from_str(ident: &syn::Ident) -> TokenStream {
     quote! {
         impl ::std::str::FromStr for #ident {
-            type Err = pars::MatchError<'static>;
+            type Err = ::pars::MatchError<'static>;
 
-            fn from_str(s: &str) -> Result<Self, pars::MatchError<'static>> {
-                use pars::ParsFromStr;
+            fn from_str(s: &str) -> Result<Self, ::pars::MatchError<'static>> {
+                use ::pars::ParsFromStr;
                 Self::pars_from_str(s)
             }
         }
@@ -200,12 +200,12 @@ fn generate_re_block(
         let field_names = #field_names;
         let field_names = field_names.to_vec();
 
-        static INSTANCE: pars::OnceCell<pars::RegexMatcher> = pars::OnceCell::INIT;
+        static INSTANCE: ::pars::OnceCell<::pars::RegexMatcher> = ::pars::OnceCell::INIT;
         let pat = INSTANCE.get_or_init(|| {
             if field_names.is_empty() {
-                pars::RegexMatcher::new(&#re_string, #num_fields).unwrap()
+                ::pars::RegexMatcher::new(&#re_string, #num_fields).unwrap()
             } else {
-                pars::RegexMatcher::new(&#re_string, field_names).unwrap()
+                ::pars::RegexMatcher::new(&#re_string, field_names).unwrap()
             }
         });
 
@@ -243,9 +243,9 @@ fn generate_fmt_block(
         let field_names = #field_names;
         let field_names = field_names.to_vec();
 
-        static INSTANCE: pars::OnceCell<pars::FmtMatcher> = pars::OnceCell::INIT;
+        static INSTANCE: ::pars::OnceCell<::pars::FmtMatcher> = ::pars::OnceCell::INIT;
         let pat = INSTANCE.get_or_init(|| {
-            pars::FmtMatcher::new(#fmt_string, #field_names).unwrap()
+            ::pars::FmtMatcher::new(#fmt_string, #field_names).unwrap()
         });
 
         let ordered_matches = pat.try_match(src)?;
@@ -272,7 +272,7 @@ fn gen_struct_body<'a>(cont: &Container) -> TokenStream {
 
         out.extend(quote! {
             #ident: ordered_matches.get(#i).parse()
-            .map_err(|e| pars::MatchError::field_failed(stringify!(#ident), stringify!(#ty), ordered_matches.get(#i).to_string()))?,
+            .map_err(|e| ::pars::MatchError::field_failed(stringify!(#ident), stringify!(#ty), ordered_matches.get(#i).to_string()))?,
         });
     }
 
