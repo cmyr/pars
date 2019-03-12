@@ -1,14 +1,18 @@
 //! Regex backed parsing
 
-use crate::error::FormatError;
-use regex::{Captures, Error as RegexErr, Regex};
+use crate::error::{FormatError, MatchError};
+use regex::{Captures, Regex};
 
-pub struct RegexMatcher {
+#[allow(dead_code)]
+pub struct RegexMatcher<'a> {
+    source: &'a str,
     pattern: Regex,
     fields: Fields,
 }
 
-enum Fields {
+pub struct RegexMatch<'a, 'b>(Captures<'b>, &'a str);
+
+pub enum Fields {
     Unnamed(usize),
     Named(Vec<String>),
 }
@@ -40,8 +44,14 @@ impl Fields {
     }
 }
 
-impl RegexMatcher {
-    fn new<T: Into<Fields>>(string: &str, fields: T) -> Result<Self, FormatError> {
+impl<'a> RegexMatcher<'a> {
+    //TODO: this is a hack, it's complicated, i'll delete it, probably
+    #[doc(hidden)]
+    pub fn new_unnamed(string: &'a str, num_fields: usize) -> Result<Self, FormatError> {
+        Self::new(string, num_fields)
+    }
+
+    pub fn new<T: Into<Fields>>(string: &'a str, fields: T) -> Result<Self, FormatError> {
         let fields = fields.into();
         let pattern = Regex::new(string)
             .map_err(|e| FormatError::new(string, 0..string.len(), e.to_string()))?;
@@ -88,7 +98,27 @@ impl RegexMatcher {
                 }
             }
         }
-        Ok(RegexMatcher { pattern, fields })
+        Ok(RegexMatcher { pattern, fields, source: string })
+    }
+
+    pub fn captures<'b>(&'a self, input: &'b str) -> Result<RegexMatch<'a, 'b>, MatchError<'a>> {
+        let captures = self.pattern.captures(input).ok_or(MatchError::MatchFailed)?;
+        Ok(RegexMatch(captures, &self.source))
+    }
+}
+
+impl<'a, 'b> RegexMatch<'a, 'b> {
+    pub fn parse_idx<E, T>(&self, idx: usize) -> Result<T, MatchError<'a>>
+    where
+        E: std::error::Error + Sized + 'static,
+        T: std::str::FromStr<Err = E>,
+    {
+        let s = self.0.get(idx + 1).expect("all indicies have been validated");
+        s.as_str().parse::<T>().map_err(|e| MatchError::FieldFailed {
+            expected_type: "unknown",
+            member: "unknown",
+            inner: Some(Box::new(e)),
+        })
     }
 }
 

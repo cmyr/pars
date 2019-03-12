@@ -52,6 +52,7 @@ impl fmt::Display for FormatError {
 /// Errors that can occur during parsing.
 #[derive(Debug)]
 pub enum MatchError<'a> {
+    MatchFailed,
     MissingSeparator {
         idx: usize,
         string: &'a str,
@@ -73,6 +74,7 @@ impl<'a> MatchError<'a> {
 impl<'a> fmt::Display for MatchError<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
+            MatchError::MatchFailed => write!(f, "match failed"),
             MatchError::InputExhausted => write!(f, "input exhausted"),
             MatchError::MissingSeparator { idx, string } => {
                 //TODO: we could do fancy diagnostic errors here

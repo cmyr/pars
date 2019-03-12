@@ -5,5 +5,6 @@ mod error;
 mod regex;
 mod simple;
 
+pub use crate::regex::{RegexMatch, RegexMatcher};
 pub use error::{FormatError, MatchError};
 pub use simple::{FmtMatch, FmtMatcher};

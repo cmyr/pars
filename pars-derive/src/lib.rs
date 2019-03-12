@@ -68,7 +68,7 @@ use proc_macro2::{Span, TokenStream};
 use std::vec::Vec;
 use syn::{AttributeArgs, DeriveInput, Lit, NestedMeta};
 
-use regex::Regex;
+//use regex::Regex;
 
 enum Mode {
     Fmt(AttributeArgs),
@@ -102,11 +102,7 @@ pub fn fmt(attr: TokenStream1, tokens: TokenStream1) -> TokenStream1 {
 fn generate_impls(mode: Mode, cont: &Container) -> Result<TokenStream, Vec<syn::Error>> {
     let ident = &cont.ident;
     let orig = &cont.original;
-    let fn_ident = syn::Ident::new(
-        &format!("_PARS_matches_for_{}", cont.ident.to_string()),
-        Span::call_site(),
-    );
-
+    let fn_ident = make_named_impl(&cont.ident, "matches");
     let mode_block = match mode {
         Mode::Regex(ref attrs) => generate_re_block(attrs, &cont)?,
         Mode::Fmt(ref attrs) => generate_fmt_block(attrs, &cont)?,
@@ -123,9 +119,8 @@ fn generate_impls(mode: Mode, cont: &Container) -> Result<TokenStream, Vec<syn::
 
         #mode_block
 
-        impl ::pars::ParsFromStr for #ident {
-            fn pars_from_str(src: &str) -> Result<Self, ::pars::Error> {
-                use pars::Matches;
+        impl pars::ParsFromStr for #ident {
+            fn pars_from_str(src: &str) -> Result<Self, pars::MatchError<'static>> {
                 let captures = #fn_ident(src)?;
                 Ok(
                     #ident
@@ -138,6 +133,10 @@ fn generate_impls(mode: Mode, cont: &Container) -> Result<TokenStream, Vec<syn::
     impl_block.extend(maybe_generate_from_str(ident, &mode));
 
     Ok(impl_block)
+}
+
+fn make_named_impl(ident: &syn::Ident, name: &str) -> syn::Ident {
+    syn::Ident::new(&format!("_PARS_{}_for_{}", name, ident.to_string()), Span::call_site())
 }
 
 fn maybe_generate_from_str(ident: &syn::Ident, mode: &Mode) -> TokenStream {
@@ -168,10 +167,10 @@ fn maybe_generate_from_str(ident: &syn::Ident, mode: &Mode) -> TokenStream {
 fn generate_from_str(ident: &syn::Ident) -> TokenStream {
     quote! {
         impl ::std::str::FromStr for #ident {
-            type Err = ::pars::Error;
+            type Err = pars::MatchError<'static>;
 
-            fn from_str(s: &str) -> Result<Self, ::pars::Error> {
-                use ::pars::ParsFromStr;
+            fn from_str(s: &str) -> Result<Self, pars::MatchError<'static>> {
+                use pars::ParsFromStr;
                 Self::pars_from_str(s)
             }
         }
@@ -183,45 +182,52 @@ fn generate_re_block(
     cont: &Container,
 ) -> Result<TokenStream, Vec<syn::Error>> {
     let re_string = get_attr_string(attrs).map_err(|e| vec![e])?;
-    // first check our regex:
-    let _ = Regex::new(&re_string)
-        .map_err(|e| vec![syn::Error::new_spanned(attrs.first().unwrap(), e.to_string())])?;
-    let fn_ident = syn::Ident::new(
-        &format!("_PARS_matches_for_{}", cont.ident.to_string()),
-        Span::call_site(),
-    );
+    let fn_ident = make_named_impl(&cont.ident, "matches");
     let num_fields = cont.data.num_fields();
+    let field_names = cont
+        .data
+        .all_fields()
+        .filter_map(|f| match &f.member {
+            syn::Member::Named(ident) => Some(ident.to_string()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
 
-    //TODO: can we just return -> impl Fn(usize) -> Result<&str, Error>?;
+    let pattern = if field_names.is_empty() {
+        pars_fmt::RegexMatcher::new_unnamed(&re_string, num_fields)
+    } else {
+        pars_fmt::RegexMatcher::new(&re_string, field_names.clone())
+    };
+
+    let _ = pattern.map_err(|e| vec![syn::Error::new(Span::call_site(), e.to_string())])?;
+    let field_names = gen_static_str_slice(field_names.as_slice());
+
     let re_block = quote! {
-        fn #fn_ident<'a>(src: &'a str) -> Result<impl ::pars::Matches + 'a, ::pars::Error> {
+        fn #fn_ident<'a>(src: &'a str) -> Result<pars::RegexMatch<'static, 'a>, pars::MatchError<'static>> {
 
-            static INSTANCE: ::pars::OnceCell<::pars::Regex> = ::pars::OnceCell::INIT;
+            let field_names = #field_names;
+            let field_names = field_names.to_vec();
+
+            static INSTANCE: pars::OnceCell<pars::RegexMatcher> = pars::OnceCell::INIT;
             let pat = INSTANCE.get_or_init(|| {
-                ::pars::regex_new(&#re_string).unwrap()
+                if field_names.is_empty() {
+                    pars::RegexMatcher::new(&#re_string, #num_fields).unwrap()
+                } else {
+                    pars::RegexMatcher::new(&#re_string, field_names).unwrap()
+                }
             });
 
-            let caps = pat.captures(src).ok_or(::pars::Error::MatchFailed(format!("no matches")))?;
-            if caps.len() != #num_fields + 1 {
-                let err_msg = format!("Incorrect match count for '{}', expected {} found {}",
-                                      src, #num_fields, caps.len() - 1);
-                return Err(::pars::Error::MatchFailed(err_msg));
-            }
-            Ok(caps)
+            pat.captures(src)
         }
     };
     Ok(re_block)
 }
 
-#[allow(unused_variables)]
 fn generate_fmt_block(
     attrs: &AttributeArgs,
     cont: &Container,
 ) -> Result<TokenStream, Vec<syn::Error>> {
-    let fn_ident = syn::Ident::new(
-        &format!("_PARS_matches_for_{}", cont.ident.to_string()),
-        Span::call_site(),
-    );
+    let fn_ident = make_named_impl(&cont.ident, "matches");
     if let Data::Enum(_) = cont.data {
         panic!("pars::fmt only works with structs");
     }
@@ -235,7 +241,7 @@ fn generate_fmt_block(
         })
         .collect::<Vec<_>>();
     let fmt_string = get_attr_string(attrs).map_err(|e| vec![e])?;
-    let num_fields = cont.data.num_fields();
+    let _num_fields = cont.data.num_fields();
 
     // check that the fmt string is valid
     let _ = ::pars_fmt::FmtMatcher::new(&fmt_string, field_names.as_slice())
@@ -244,14 +250,18 @@ fn generate_fmt_block(
     let field_names = gen_static_str_slice(field_names.as_slice());
 
     let fmt_block = quote! {
-        fn #fn_ident<'a>(src: &'a str) -> Result<impl ::pars::Matches + 'a, ::pars::Error> {
+        fn #fn_ident<'a>(src: &'a str) -> Result<pars::FmtMatch<'static, 'a>, pars::MatchError<'static>> {
 
-            static INSTANCE: ::pars::OnceCell<::pars::FmtMatcher> = ::pars::OnceCell::INIT;
+            let field_names = #field_names;
+            let field_names = field_names.to_vec();
+
+
+            static INSTANCE: pars::OnceCell<pars::FmtMatcher> = pars::OnceCell::INIT;
             let pat = INSTANCE.get_or_init(|| {
-                ::pars::FmtMatcher::new(#fmt_string, #field_names).unwrap()
+                pars::FmtMatcher::new(#fmt_string, #field_names).unwrap()
             });
 
-            pat.try_match(src).map_err(|e| ::pars::Error::MatchFailed(format!("{:?}", e)))
+            pat.try_match(src)
         }
     };
     Ok(fmt_block)

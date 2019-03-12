@@ -240,7 +240,7 @@ impl<'a> FmtMatcher<'a> {
         parser.into_matcher(fields)
     }
 
-    pub fn try_match<'b>(&'a self, source: &'b str) -> Result<FmtMatch<'a, 'b>, MatchError> {
+    pub fn try_match<'b>(&'a self, source: &'b str) -> Result<FmtMatch<'a, 'b>, MatchError<'a>> {
         // we insert the field locations in the order they appear in the struct declaration,
         // so we need to have a vec we can just index into.
         let mut values = vec![0..0; self.fmt_fields.len()];
@@ -293,9 +293,22 @@ impl<'a> FmtMatcher<'a> {
 }
 
 impl<'a, 'b> FmtMatch<'a, 'b> {
-    pub fn get_match(&'a self, idx: usize) -> Result<&'a str, MatchError> {
+    pub fn get_match(&'a self, idx: usize) -> Result<&'a str, MatchError<'a>> {
         let range = self.values.get(idx).expect("all indices should be validated by now");
         Ok(&self.source[range.clone()])
+    }
+
+    pub fn parse_idx<E, T>(&self, idx: usize) -> Result<T, MatchError<'a>>
+    where
+        E: std::error::Error + Sized + 'static,
+        T: std::str::FromStr<Err = E>,
+    {
+        let s = self.get_match(idx).unwrap();
+        s.parse::<T>().map_err(|e| MatchError::FieldFailed {
+            expected_type: "unknown",
+            member: "unknown",
+            inner: Some(Box::new(e)),
+        })
     }
 }
 
