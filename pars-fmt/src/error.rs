@@ -54,6 +54,7 @@ impl fmt::Display for FormatError {
 pub enum MatchError<'a> {
     MatchFailed,
     MissingSeparator { idx: usize, string: &'a str },
+    MissingCaptureGroup(usize),
     InputExhausted,
     FieldFailed { member: &'static str, expected_type: &'static str, input: String },
 }
@@ -73,6 +74,7 @@ impl<'a> fmt::Display for MatchError<'a> {
         match self {
             MatchError::MatchFailed => write!(f, "match failed"),
             MatchError::InputExhausted => write!(f, "input exhausted"),
+            MatchError::MissingCaptureGroup(idx) => write!(f, "missing capture group {}", idx),
             MatchError::MissingSeparator { idx, string } => {
                 //TODO: we could do fancy diagnostic errors here
                 write!(f, "missing separator at index {}, text: '{}'", idx, string)

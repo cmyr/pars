@@ -193,13 +193,16 @@ fn generate_re_block(
         pars_fmt::RegexMatcher::new(&re_string, field_names.clone())
     };
 
-    let _ = pattern.map_err(|e| vec![syn::Error::new(Span::call_site(), e.to_string())])?;
+    let pattern = pattern.map_err(|e| vec![syn::Error::new(Span::call_site(), e.to_string())])?;
     let field_names = gen_static_array(field_names.as_slice());
+    let position_mapping = gen_static_array(&pattern.make_position_mapping());
 
     let re_block = quote! {
 
+        let position_mapping = #position_mapping;
         let field_names = #field_names;
         let field_names = field_names.to_vec();
+        let mut ordered_matches = [""; #num_fields];
 
         static INSTANCE: ::pars::OnceCell<::pars::RegexMatcher> = ::pars::OnceCell::INIT;
         let pat = INSTANCE.get_or_init(|| {
@@ -210,7 +213,16 @@ fn generate_re_block(
             }
         });
 
-        let ordered_matches = pat.captures(src)?;
+        let captures = pat.captures(src)?;
+
+        for i in 0..#num_fields {
+            let match_str = match captures.0.get(i + 1) {
+                Some(m) => m.as_str(),
+                None => return Err(pars::MatchError::MissingCaptureGroup(i)),
+            };
+            let match_idx = position_mapping[i];
+            ordered_matches[match_idx] = match_str;
+        }
     };
     Ok(re_block)
 }

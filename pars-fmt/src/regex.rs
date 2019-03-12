@@ -8,9 +8,10 @@ pub struct RegexMatcher<'a> {
     source: &'a str,
     pattern: Regex,
     fields: Fields,
+    pat_has_names: bool,
 }
 
-pub struct RegexMatch<'a, 'b>(Captures<'b>, &'a str);
+pub struct RegexMatch<'a, 'b>(pub Captures<'b>, &'a str);
 
 pub enum Fields {
     Unnamed(usize),
@@ -86,19 +87,50 @@ impl<'a> RegexMatcher<'a> {
             ));
         }
 
-        if let Fields::Named(ref names) = fields {
-            // check for existence of names now
-            for group_name in capture_names.iter().flat_map(|s| s) {
-                if names.iter().position(|name| name == group_name).is_none() {
-                    return Err(FormatError::new(
-                        string,
-                        0..string.len(),
-                        format!("Unexpected capture group: \"{}\"", group_name),
-                    ));
+        let pat_has_names = capture_names[0].is_some();
+
+        if pat_has_names {
+            if let Fields::Named(ref names) = fields {
+                // check for existence of names now
+                for group_name in capture_names.iter().map(|n| n.unwrap()) {
+                    if names.iter().position(|name| name == group_name).is_none() {
+                        return Err(FormatError::new(
+                            string,
+                            0..string.len(),
+                            format!("Unexpected capture group: \"{}\"", group_name),
+                        ));
+                    }
                 }
+            } else {
+                return Err(FormatError::new(
+                    string,
+                    0..string.len(),
+                    "group names meaningless for type without field names",
+                ));
             }
         }
-        Ok(RegexMatcher { pattern, fields, source: string })
+        Ok(RegexMatcher { pattern, fields, source: string, pat_has_names })
+    }
+
+    /// returns a vec mapping the position of captures in the regex to
+    /// the position of fields in the struct.
+    pub fn make_position_mapping(&self) -> Vec<usize> {
+        match (&self.fields, self.pat_has_names) {
+            (Fields::Named(names), true) => self
+                .pattern
+                .capture_names()
+                .skip(1)
+                .map(|n| {
+                    let name = n.expect("name missing: input should be validated");
+                    names
+                        .iter()
+                        .position(|field_name| field_name == name)
+                        .expect("input should be validated")
+                })
+                .collect(),
+            (fields, false) => (0..fields.len()).collect(),
+            _ => unreachable!(),
+        }
     }
 
     pub fn captures<'b>(&'a self, input: &'b str) -> Result<RegexMatch<'a, 'b>, MatchError<'a>> {
