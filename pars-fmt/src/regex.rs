@@ -108,17 +108,8 @@ impl<'a> RegexMatcher<'a> {
 }
 
 impl<'a, 'b> RegexMatch<'a, 'b> {
-    pub fn parse_idx<E, T>(&self, idx: usize) -> Result<T, MatchError<'a>>
-    where
-        E: std::error::Error + Sized + 'static,
-        T: std::str::FromStr<Err = E>,
-    {
-        let s = self.0.get(idx + 1).expect("all indicies have been validated");
-        s.as_str().parse::<T>().map_err(|e| MatchError::FieldFailed {
-            expected_type: "unknown",
-            member: "unknown",
-            inner: Some(Box::new(e)),
-        })
+    pub fn get(&self, idx: usize) -> &'b str {
+        self.0.get(idx + 1).expect("all indicies have been validated").as_str()
     }
 }
 

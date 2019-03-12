@@ -293,22 +293,9 @@ impl<'a> FmtMatcher<'a> {
 }
 
 impl<'a, 'b> FmtMatch<'a, 'b> {
-    pub fn get_match(&'a self, idx: usize) -> Result<&'a str, MatchError<'a>> {
-        let range = self.values.get(idx).expect("all indices should be validated by now");
-        Ok(&self.source[range.clone()])
-    }
-
-    pub fn parse_idx<E, T>(&self, idx: usize) -> Result<T, MatchError<'a>>
-    where
-        E: std::error::Error + Sized + 'static,
-        T: std::str::FromStr<Err = E>,
-    {
-        let s = self.get_match(idx).unwrap();
-        s.parse::<T>().map_err(|e| MatchError::FieldFailed {
-            expected_type: "unknown",
-            member: "unknown",
-            inner: Some(Box::new(e)),
-        })
+    pub fn get(&'a self, idx: usize) -> &'a str {
+        let range = self.values.get(idx).expect("all indices should be validated");
+        &self.source[range.clone()]
     }
 }
 
@@ -389,7 +376,7 @@ mod tests {
         let matcher = FmtMatcher::new(fmt_str, fields).unwrap();
 
         let mtch = matcher.try_match("hi mom").unwrap();
-        assert_eq!(mtch.get_match(0).unwrap(), "mom");
-        assert_eq!(mtch.get_match(1).unwrap(), "hi");
+        assert_eq!(mtch.get(0), "mom");
+        assert_eq!(mtch.get(1), "hi");
     }
 }

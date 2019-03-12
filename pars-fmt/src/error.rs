@@ -53,21 +53,18 @@ impl fmt::Display for FormatError {
 #[derive(Debug)]
 pub enum MatchError<'a> {
     MatchFailed,
-    MissingSeparator {
-        idx: usize,
-        string: &'a str,
-    },
+    MissingSeparator { idx: usize, string: &'a str },
     InputExhausted,
-    FieldFailed {
-        expected_type: &'static str,
-        member: &'static str,
-        inner: Option<Box<dyn std::error::Error + 'static>>,
-    },
+    FieldFailed { member: &'static str, expected_type: &'static str, input: String },
 }
 
 impl<'a> MatchError<'a> {
     pub(crate) fn missing_separator(idx: usize, string: &'a str) -> Self {
         MatchError::MissingSeparator { idx, string }
+    }
+
+    pub fn field_failed(member: &'static str, expected_type: &'static str, input: String) -> Self {
+        MatchError::FieldFailed { expected_type, member, input }
     }
 }
 
@@ -80,12 +77,8 @@ impl<'a> fmt::Display for MatchError<'a> {
                 //TODO: we could do fancy diagnostic errors here
                 write!(f, "missing separator at index {}, text: '{}'", idx, string)
             }
-            MatchError::FieldFailed { expected_type, member, inner } => {
-                write!(f, "failed to parse field {}, expected {}", member, expected_type)?;
-                if let Some(err) = inner {
-                    write!(f, ": {}", err)?;
-                }
-                Ok(())
+            MatchError::FieldFailed { member, expected_type, input } => {
+                write!(f, "failed to parse {}: {} from \"{}\"", member, expected_type, input)
             }
         }
     }

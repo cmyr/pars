@@ -282,8 +282,11 @@ fn gen_struct_body<'a>(cont: &Container) -> TokenStream {
     let mut out = TokenStream::new();
     for (i, field) in cont.data.all_fields().enumerate() {
         let ident = field.original.ident.as_ref().unwrap();
+        let ty = field.ty;
+
         out.extend(quote! {
-            #ident: captures.parse_idx(#i)?,
+            #ident: captures.get(#i).parse()
+            .map_err(|e| pars::MatchError::field_failed(stringify!(#ident), stringify!(#ty), captures.get(#i).to_string()))?,
         });
     }
 
