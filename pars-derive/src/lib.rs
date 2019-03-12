@@ -68,8 +68,6 @@ use proc_macro2::{Span, TokenStream};
 use std::vec::Vec;
 use syn::{AttributeArgs, DeriveInput, Lit, NestedMeta};
 
-//use regex::Regex;
-
 enum Mode {
     Fmt(AttributeArgs),
     Regex(AttributeArgs),
@@ -102,7 +100,7 @@ pub fn fmt(attr: TokenStream1, tokens: TokenStream1) -> TokenStream1 {
 fn generate_impls(mode: Mode, cont: &Container) -> Result<TokenStream, Vec<syn::Error>> {
     let ident = &cont.ident;
     let orig = &cont.original;
-    let fn_ident = make_named_impl(&cont.ident, "matches");
+
     let mode_block = match mode {
         Mode::Regex(ref attrs) => generate_re_block(attrs, &cont)?,
         Mode::Fmt(ref attrs) => generate_fmt_block(attrs, &cont)?,
@@ -117,11 +115,11 @@ fn generate_impls(mode: Mode, cont: &Container) -> Result<TokenStream, Vec<syn::
     let mut impl_block = quote! {
         #orig
 
-        #mode_block
-
         impl pars::ParsFromStr for #ident {
             fn pars_from_str(src: &str) -> Result<Self, pars::MatchError<'static>> {
-                let captures = #fn_ident(src)?;
+
+                #mode_block
+
                 Ok(
                     #ident
                     #body
@@ -133,10 +131,6 @@ fn generate_impls(mode: Mode, cont: &Container) -> Result<TokenStream, Vec<syn::
     impl_block.extend(maybe_generate_from_str(ident, &mode));
 
     Ok(impl_block)
-}
-
-fn make_named_impl(ident: &syn::Ident, name: &str) -> syn::Ident {
-    syn::Ident::new(&format!("_PARS_{}_for_{}", name, ident.to_string()), Span::call_site())
 }
 
 fn maybe_generate_from_str(ident: &syn::Ident, mode: &Mode) -> TokenStream {
@@ -182,7 +176,6 @@ fn generate_re_block(
     cont: &Container,
 ) -> Result<TokenStream, Vec<syn::Error>> {
     let re_string = get_attr_string(attrs).map_err(|e| vec![e])?;
-    let fn_ident = make_named_impl(&cont.ident, "matches");
     let num_fields = cont.data.num_fields();
     let field_names = cont
         .data
@@ -203,22 +196,20 @@ fn generate_re_block(
     let field_names = gen_static_str_slice(field_names.as_slice());
 
     let re_block = quote! {
-        fn #fn_ident<'a>(src: &'a str) -> Result<pars::RegexMatch<'static, 'a>, pars::MatchError<'static>> {
 
-            let field_names = #field_names;
-            let field_names = field_names.to_vec();
+        let field_names = #field_names;
+        let field_names = field_names.to_vec();
 
-            static INSTANCE: pars::OnceCell<pars::RegexMatcher> = pars::OnceCell::INIT;
-            let pat = INSTANCE.get_or_init(|| {
-                if field_names.is_empty() {
-                    pars::RegexMatcher::new(&#re_string, #num_fields).unwrap()
-                } else {
-                    pars::RegexMatcher::new(&#re_string, field_names).unwrap()
-                }
-            });
+        static INSTANCE: pars::OnceCell<pars::RegexMatcher> = pars::OnceCell::INIT;
+        let pat = INSTANCE.get_or_init(|| {
+            if field_names.is_empty() {
+                pars::RegexMatcher::new(&#re_string, #num_fields).unwrap()
+            } else {
+                pars::RegexMatcher::new(&#re_string, field_names).unwrap()
+            }
+        });
 
-            pat.captures(src)
-        }
+        let ordered_matches = pat.captures(src)?;
     };
     Ok(re_block)
 }
@@ -227,7 +218,6 @@ fn generate_fmt_block(
     attrs: &AttributeArgs,
     cont: &Container,
 ) -> Result<TokenStream, Vec<syn::Error>> {
-    let fn_ident = make_named_impl(&cont.ident, "matches");
     if let Data::Enum(_) = cont.data {
         panic!("pars::fmt only works with structs");
     }
@@ -250,19 +240,15 @@ fn generate_fmt_block(
     let field_names = gen_static_str_slice(field_names.as_slice());
 
     let fmt_block = quote! {
-        fn #fn_ident<'a>(src: &'a str) -> Result<pars::FmtMatch<'static, 'a>, pars::MatchError<'static>> {
+        let field_names = #field_names;
+        let field_names = field_names.to_vec();
 
-            let field_names = #field_names;
-            let field_names = field_names.to_vec();
+        static INSTANCE: pars::OnceCell<pars::FmtMatcher> = pars::OnceCell::INIT;
+        let pat = INSTANCE.get_or_init(|| {
+            pars::FmtMatcher::new(#fmt_string, #field_names).unwrap()
+        });
 
-
-            static INSTANCE: pars::OnceCell<pars::FmtMatcher> = pars::OnceCell::INIT;
-            let pat = INSTANCE.get_or_init(|| {
-                pars::FmtMatcher::new(#fmt_string, #field_names).unwrap()
-            });
-
-            pat.try_match(src)
-        }
+        let ordered_matches = pat.try_match(src)?;
     };
     Ok(fmt_block)
 }
@@ -285,8 +271,8 @@ fn gen_struct_body<'a>(cont: &Container) -> TokenStream {
         let ty = field.ty;
 
         out.extend(quote! {
-            #ident: captures.get(#i).parse()
-            .map_err(|e| pars::MatchError::field_failed(stringify!(#ident), stringify!(#ty), captures.get(#i).to_string()))?,
+            #ident: ordered_matches.get(#i).parse()
+            .map_err(|e| pars::MatchError::field_failed(stringify!(#ident), stringify!(#ty), ordered_matches.get(#i).to_string()))?,
         });
     }
 
