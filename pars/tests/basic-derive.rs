@@ -77,3 +77,21 @@ fn named_fields_out_of_order() {
     let someone = Person::pars_from_str("Bactra: 42").unwrap();
     assert_eq!(someone, Person { age: 42, name: "Bactra".into() })
 }
+
+#[test]
+fn fmt_tuple_struct() {
+    #[pars::fmt("(#{x}, #{y})")]
+    struct Coord(usize, usize);
+
+    let Coord(x, y) = Coord::pars_from_str("(42, 5)").unwrap();
+    assert_eq!((x, y), (42, 5));
+}
+
+#[test]
+fn re_tuple_struct() {
+    #[pars::re(r"\((.+), (.+)\)")]
+    struct Coord(usize, usize);
+
+    let Coord(x, y) = Coord::pars_from_str("(42, 5)").unwrap();
+    assert_eq!((x, y), (42, 5));
+}
