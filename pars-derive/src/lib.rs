@@ -320,8 +320,8 @@ fn gen_struct_body<'a>(cont: &Container) -> TokenStream {
         let ty = field.ty;
 
         out.extend(quote! {
-            #ident: ordered_matches.get(#i).unwrap().parse()
-.map_err(|e| ::pars::MatchError::field_failed(stringify!(#ident), stringify!(#ty), ordered_matches.get(#i).unwrap().to_string()))?,
+            #ident: ordered_matches[#i].parse()
+            .map_err(|e| pars::MatchError::field_failed(stringify!(#ident), stringify!(#ty), ordered_matches[#i].to_string()))?,
         });
     }
 

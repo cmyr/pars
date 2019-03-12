@@ -306,8 +306,9 @@ impl<'a> FmtMatcher<'a> {
     }
 }
 
+#[cfg(test)]
 impl<'a, 'b> FmtMatch<'a, 'b> {
-    pub fn get(&'a self, idx: usize) -> &'a str {
+    fn get(&'a self, idx: usize) -> &'a str {
         let range = self.values.get(idx).expect("all indices should be validated");
         &self.source[range.clone()]
     }
