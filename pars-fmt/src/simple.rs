@@ -287,57 +287,59 @@ impl<'a> FmtMatcher<'a> {
         result
     }
 
-    pub fn try_match<'b>(&'a self, source: &'b str) -> Result<FmtMatch<'a, 'b>, MatchError<'a>> {
-        // we insert the field locations in the order they appear in the struct declaration,
-        // so we need to have a vec we can just index into.
-        let mut values = vec![0..0; self.fmt_fields.len()];
-        // current position in the source string.
-        let mut pos = 0;
-        // we track this for better diagnostics.
-        let mut current_sep = 0;
-
-        if let Some(ref head) = self.lead_separator {
-            let sep_string = &self.source[head.clone()];
-            match source.find(sep_string) {
-                Some(0) => pos = head.len(),
-                _ => return Err(MatchError::missing_separator(current_sep, sep_string)),
-            }
-            current_sep += 1;
-        }
-
-        let separators = self.make_separator_indices();
-        for (sep_string, field_idx) in separators {
-            if pos == source.len() {
-                return Err(MatchError::InputExhausted);
-            }
-            if sep_string.is_empty() {
-                // take all remaining string
-                values[field_idx] = pos..source.len();
-                pos = source.len();
-                continue;
-            }
-
-            match &source[pos..].find(sep_string) {
-                Some(sep_start) => {
-                    values[field_idx] = pos..pos + sep_start;
-                    pos = pos + sep_start + sep_string.len();
-                }
-                None => return Err(MatchError::missing_separator(current_sep, sep_string)),
-            }
-
-            current_sep += 1;
-        }
-
-        Ok(FmtMatch { matcher: self, source, values })
+    #[cfg(test)]
+    fn ordered_matches<'inp>(&'a self, input: &'inp str) -> Result<Vec<&'inp str>, MatchError<'a>> {
+        let separator_indices = self.make_separator_indices();
+        let lead_separator = self.get_lead_separator_str();
+        let mut ordered_matches = vec![""; self.fields.len()];
+        order_matches(input, &lead_separator, &separator_indices, &mut ordered_matches)?;
+        Ok(ordered_matches)
     }
 }
 
-#[cfg(test)]
-impl<'a, 'b> FmtMatch<'a, 'b> {
-    fn get(&'a self, idx: usize) -> &'a str {
-        let range = self.values.get(idx).expect("all indices should be validated");
-        &self.source[range.clone()]
+/// This is used at compile time to order our matches based on their names,
+/// if necessary. It lives here so that when we write tests, we know they're
+/// using the same logic as the macro.
+#[doc(hidden)]
+#[inline]
+pub fn order_matches<'inp, 'data>(
+    input: &'inp str,
+    lead_separator: &'data str,
+    separator_indices: &[(&'data str, usize)],
+    ordered_matches: &mut [&'inp str],
+) -> Result<(), MatchError<'data>> {
+    let mut pos = 0;
+    let mut current_sep = 0;
+
+    match input.find(lead_separator) {
+        Some(0) if !lead_separator.is_empty() => {
+            pos = lead_separator.len();
+            current_sep += 1;
+        }
+        Some(_) => (),
+        _ => return Err(MatchError::missing_separator(current_sep, lead_separator)),
+    };
+
+    for (separator, field_idx) in separator_indices {
+        if pos == input.len() {
+            return Err(MatchError::InputExhausted);
+        }
+        if separator.is_empty() {
+            ordered_matches[*field_idx] = &input[pos..];
+            pos = input.len();
+            continue;
+        }
+
+        match input[pos..].find(separator) {
+            Some(idx) => {
+                ordered_matches[*field_idx] = &input[pos..pos + idx];
+                pos = pos + idx + separator.len();
+            }
+            None => return Err(MatchError::missing_separator(current_sep, separator)),
+        }
+        current_sep += 1;
     }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -366,8 +368,8 @@ mod tests {
         assert!(matcher.lead_separator.is_none());
         assert_eq!(matcher.fmt_fields.len(), 4);
 
-        let amatch = matcher.try_match("4, 5 10 11").unwrap();
-        assert_eq!(amatch.values, vec![0..1, 3..4, 5..7, 8..10])
+        let amatch = matcher.ordered_matches("4, 5 10 11").unwrap();
+        assert_eq!(amatch, vec!["4", "5", "10", "11"]);
     }
 
     #[test]
@@ -377,13 +379,13 @@ mod tests {
         parser.run().unwrap();
         let fields = Fields::Named(&["x", "y", "width", "height"]);
         let matcher = parser.into_matcher(fields).unwrap();
-        matcher.try_match("4 5 hello").unwrap();
+        matcher.ordered_matches("4 5 hello").unwrap();
     }
 
     #[test]
     fn separator_includes_hash() {
         let matcher = FmtMatcher::new_named("##{num}: (#{count})", &["num", "count"]).unwrap();
-        assert!(matcher.try_match("#5: (some)").is_ok())
+        assert!(matcher.ordered_matches("#5: (some)").is_ok())
     }
 
     #[test]
@@ -416,8 +418,8 @@ mod tests {
         let fields = &["y", "x"];
         let matcher = FmtMatcher::new_named(fmt_str, fields).unwrap();
 
-        let mtch = matcher.try_match("hi mom").unwrap();
-        assert_eq!(mtch.get(0), "mom");
-        assert_eq!(mtch.get(1), "hi");
+        let mtch = matcher.ordered_matches("hi mom").unwrap();
+        assert_eq!(mtch[0], "mom");
+        assert_eq!(mtch[1], "hi");
     }
 }

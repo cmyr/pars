@@ -216,34 +216,9 @@ fn generate_fmt_block(
         let lead_separator = #lead_separator;
         let separator_indices = #separator_indices;
 
-        let mut pos = 0;
-        let mut current_sep = 0;
         let mut ordered_matches = [""; #num_fields];
 
-        match src.find(lead_separator) {
-            Some(0) => pos = lead_separator.len(),
-            _ => return Err(::pars::MatchError::missing_separator(current_sep, lead_separator)),
-        };
-
-        for (separator, field_idx) in &separator_indices {
-            if pos == src.len() {
-                return Err(::pars::MatchError::InputExhausted);
-            }
-            if separator.is_empty() {
-                ordered_matches[*field_idx] = &src[pos..];
-                pos = src.len();
-                continue;
-            }
-
-            match src[pos..].find(separator) {
-                Some(idx) => {
-                    ordered_matches[*field_idx] = &src[pos..pos + idx];
-                    pos = pos + idx + separator.len();
-                }
-                None => return Err(::pars::MatchError::missing_separator(current_sep, separator)),
-            }
-            current_sep += 1;
-        }
+        ::pars::order_matches(src, &lead_separator, &separator_indices, &mut ordered_matches)?;
     };
     Ok(fmt_block)
 }
