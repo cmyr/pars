@@ -1,6 +1,7 @@
 //! Implementation for pars functionality. This lives in its own crate
 //! to avoid circular dependencies.
 
+mod common;
 mod error;
 mod regex;
 mod simple;

@@ -27,6 +27,7 @@
 
 use std::ops::Range;
 
+use crate::common::Fields;
 use crate::error::{FormatError, MatchError};
 
 #[derive(Debug)]
@@ -146,7 +147,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Check that fields in the struct match up with fields in the fmt string.
-    fn validate_fields(&self, fields: &[String]) -> Result<(), FormatError> {
+    fn validate_fields(&self, fields: &Fields) -> Result<(), FormatError> {
         let num_fields = self.tokens.iter().filter(|t| t.is_field()).count();
 
         if fields.len() != num_fields {
@@ -157,23 +158,30 @@ impl<'a> Parser<'a> {
             ));
         }
 
+        match fields {
+            Fields::Named(ref names) => self.validate_field_names(names),
+            Fields::Unnamed(_) => Ok(()),
+        }
+    }
+
+    fn validate_field_names(&self, names: &[&str]) -> Result<(), FormatError> {
         for field_range in self.tokens.iter().filter_map(|t| match t {
             Token::Separator(_) => None,
             Token::Field(ref range) => Some(range),
         }) {
             let field = &self.source[field_range.clone()];
-            if fields.iter().find(|s| *s == field).is_none() {
+            if names.iter().find(|s| **s == field).is_none() {
                 return Err(FormatError::new(
                     self.source,
                     field_range.clone(),
-                    format!("unexpected field, expected one of {}", fields.join(", ")),
+                    format!("unexpected field, expected one of {}", names.join(", ")),
                 ));
             }
         }
         Ok(())
     }
 
-    fn into_matcher(self, fields: Vec<String>) -> Result<FmtMatcher<'a>, FormatError> {
+    fn into_matcher(self, fields: Fields<'a>) -> Result<FmtMatcher<'a>, FormatError> {
         self.validate_fields(&fields)?;
         let Parser { tokens, source, .. } = self;
         let lead_separator = match tokens.first() {
@@ -221,7 +229,7 @@ pub struct FmtMatcher<'a> {
     //NOTE: we represent all substrings as ranges of self.source, to avoid
     //any unnecessary allocation.
     fmt_fields: Vec<(Range<usize>, Range<usize>)>,
-    fields: Vec<String>,
+    fields: Fields<'a>,
 }
 
 #[allow(dead_code)]
@@ -232,11 +240,19 @@ pub struct FmtMatch<'a, 'b> {
 }
 
 impl<'a> FmtMatcher<'a> {
-    pub fn new<S: AsRef<str>>(fmt_string: &'a str, fields: &[S]) -> Result<Self, FormatError> {
+    pub fn new_named(fmt_string: &'a str, fields: &'a [&'a str]) -> Result<Self, FormatError> {
+        let fields = Fields::Named(fields);
+        Self::new(fmt_string, fields)
+    }
+
+    pub fn new_unnamed(fmt_string: &'a str, fields: usize) -> Result<Self, FormatError> {
+        let fields = Fields::Unnamed(fields);
+        Self::new(fmt_string, fields)
+    }
+
+    fn new(fmt_string: &'a str, fields: Fields<'a>) -> Result<Self, FormatError> {
         let mut parser = Parser::new(fmt_string);
         parser.run()?;
-        //TODO: we should be able to have this be an array or something
-        let fields = fields.iter().map(|s| s.as_ref().to_string()).collect::<Vec<_>>();
         parser.into_matcher(fields)
     }
 
@@ -248,14 +264,16 @@ impl<'a> FmtMatcher<'a> {
     /// into the ordered field names, of the item corresponding to that separator.
     pub fn make_separator_indices(&'a self) -> Vec<(&'a str, usize)> {
         let mut result = Vec::new();
-        for (field, sep) in self.fmt_fields.iter() {
+        for (i, (field, sep)) in self.fmt_fields.iter().enumerate() {
             let sep_string = &self.source[sep.clone()];
             let field_str = &self.source[field.clone()];
-            let field_idx = self
-                .fields
-                .iter()
-                .position(|f| f == field_str)
-                .expect("all fields have been validated");
+            let field_idx = match self.fields {
+                Fields::Unnamed(_) => i,
+                Fields::Named(ref names) => names
+                    .iter()
+                    .position(|f| *f == field_str)
+                    .expect("all fields have been validated"),
+            };
             result.push((sep_string, field_idx));
         }
         result
@@ -334,7 +352,7 @@ mod tests {
     #[test]
     fn make_matcher() {
         let mut parser = Parser::new("#{x}, #{y} #{width} #{height}");
-        let fields = ["x", "y", "width", "height"].into_iter().map(|s| String::from(*s)).collect();
+        let fields = Fields::Named(&["x", "y", "width", "height"]);
         parser.run().unwrap();
         let matcher = parser.into_matcher(fields).unwrap();
         assert!(matcher.lead_separator.is_none());
@@ -349,14 +367,14 @@ mod tests {
     fn match_should_fail() {
         let mut parser = Parser::new("#{x}, #{y} #{width} #{height}");
         parser.run().unwrap();
-        let fields = ["x", "y", "width", "height"].into_iter().map(|s| String::from(*s)).collect();
+        let fields = Fields::Named(&["x", "y", "width", "height"]);
         let matcher = parser.into_matcher(fields).unwrap();
         matcher.try_match("4 5 hello").unwrap();
     }
 
     #[test]
     fn separator_includes_hash() {
-        let matcher = FmtMatcher::new("##{num}: (#{count})", &["num", "count"]).unwrap();
+        let matcher = FmtMatcher::new_named("##{num}: (#{count})", &["num", "count"]).unwrap();
         assert!(matcher.try_match("#5: (some)").is_ok())
     }
 
@@ -365,7 +383,7 @@ mod tests {
     fn missing_field_should_fail() {
         let fmt_str = "#{x} #{y}";
         let fields = &["x", "y", "z"];
-        let _ = FmtMatcher::new(fmt_str, fields).unwrap();
+        let _ = FmtMatcher::new_named(fmt_str, fields).unwrap();
     }
 
     #[test]
@@ -373,7 +391,7 @@ mod tests {
     fn extra_field_should_fail() {
         let fmt_str = "#{x} #{y}";
         let fields = &["x"];
-        let _ = FmtMatcher::new(fmt_str, fields).unwrap();
+        let _ = FmtMatcher::new_named(fmt_str, fields).unwrap();
     }
 
     #[test]
@@ -381,14 +399,14 @@ mod tests {
     fn unexpected_field_should_fail() {
         let fmt_str = "#{x} #{y}";
         let fields = &["x", "NO"];
-        let _ = FmtMatcher::new(fmt_str, fields).unwrap();
+        let _ = FmtMatcher::new_named(fmt_str, fields).unwrap();
     }
 
     #[test]
     fn fields_out_of_order() {
         let fmt_str = "#{x} #{y}";
         let fields = &["y", "x"];
-        let matcher = FmtMatcher::new(fmt_str, fields).unwrap();
+        let matcher = FmtMatcher::new_named(fmt_str, fields).unwrap();
 
         let mtch = matcher.try_match("hi mom").unwrap();
         assert_eq!(mtch.get(0), "mom");

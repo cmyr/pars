@@ -1,5 +1,6 @@
 //! Regex backed parsing
 
+use crate::common::Fields;
 use crate::error::{FormatError, MatchError};
 use regex::{Captures, Regex};
 
@@ -7,52 +8,21 @@ use regex::{Captures, Regex};
 pub struct RegexMatcher<'a> {
     source: &'a str,
     pattern: Regex,
-    fields: Fields,
+    fields: Fields<'a>,
     pat_has_names: bool,
 }
 
 pub struct RegexMatch<'a, 'b>(pub Captures<'b>, &'a str);
 
-pub enum Fields {
-    Unnamed(usize),
-    Named(Vec<String>),
-}
-
-impl From<Vec<String>> for Fields {
-    fn from(src: Vec<String>) -> Fields {
-        Fields::Named(src)
-    }
-}
-
-impl From<Vec<&str>> for Fields {
-    fn from(src: Vec<&str>) -> Fields {
-        Fields::Named(src.iter().map(|s| String::from(*s)).collect())
-    }
-}
-
-impl From<usize> for Fields {
-    fn from(src: usize) -> Fields {
-        Fields::Unnamed(src)
-    }
-}
-
-impl Fields {
-    pub fn len(&self) -> usize {
-        match self {
-            Fields::Unnamed(size) => *size,
-            Fields::Named(names) => names.len(),
-        }
-    }
-}
-
 impl<'a> RegexMatcher<'a> {
     //TODO: this is a hack, it's complicated, i'll delete it, probably
     #[doc(hidden)]
     pub fn new_unnamed(string: &'a str, num_fields: usize) -> Result<Self, FormatError> {
-        Self::new(string, num_fields)
+        let fields = Fields::Unnamed(num_fields);
+        Self::new(string, fields)
     }
 
-    pub fn new<T: Into<Fields>>(string: &'a str, fields: T) -> Result<Self, FormatError> {
+    pub fn new<T: Into<Fields<'a>>>(string: &'a str, fields: T) -> Result<Self, FormatError> {
         let fields = fields.into();
         let pattern = Regex::new(string)
             .map_err(|e| FormatError::new(string, 0..string.len(), e.to_string()))?;
@@ -93,7 +63,7 @@ impl<'a> RegexMatcher<'a> {
             if let Fields::Named(ref names) = fields {
                 // check for existence of names now
                 for group_name in capture_names.iter().map(|n| n.unwrap()) {
-                    if names.iter().position(|name| name == group_name).is_none() {
+                    if names.iter().position(|name| *name == group_name).is_none() {
                         return Err(FormatError::new(
                             string,
                             0..string.len(),
@@ -124,7 +94,7 @@ impl<'a> RegexMatcher<'a> {
                     let name = n.expect("name missing: input should be validated");
                     names
                         .iter()
-                        .position(|field_name| field_name == name)
+                        .position(|field_name| *field_name == name)
                         .expect("input should be validated")
                 })
                 .collect(),
@@ -152,39 +122,44 @@ mod tests {
     #[test]
     fn named_group_lengths_equal() {
         let pattern = r"(?P<name>.+), (?P<count>\d+)";
-        let _ = RegexMatcher::new(pattern, vec!["name", "count"]).unwrap();
+        let fields: &[&str] = &["name", "count"];
+        let _ = RegexMatcher::new(pattern, fields).unwrap();
     }
 
     #[test]
     #[should_panic(expected = "Found 2 expected 3")]
     fn named_group_lengths_unequal() {
         let pattern = r"(?P<name>.+), (?P<count>\d+)";
-        let _ = RegexMatcher::new(pattern, vec!["name", "count", "friends"]).unwrap();
+        let fields: &[&str] = &["name", "count", "friends"];
+        let _ = RegexMatcher::new(pattern, fields).unwrap();
     }
 
     #[test]
     #[should_panic(expected = "all groups must be named")]
     fn disallow_mixed_named_and_unnamed_groups() {
         let pattern = r"(\d+), (?P<named>.+)";
-        let _ = RegexMatcher::new(pattern, vec!["name", "count"]).unwrap();
+        let fields: &[&str] = &["name", "count"];
+        let _ = RegexMatcher::new(pattern, fields).unwrap();
     }
 
     #[test]
     fn all_named_or_unnamed_is_fine() {
         let pattern = r"(\d+), (.+)";
-        let _ = RegexMatcher::new(pattern, vec!["name", "count"]).unwrap();
+        let fields: &[&str] = &["name", "count"];
+        let _ = RegexMatcher::new(pattern, fields).unwrap();
 
         let pattern = r"(\d+), (.+)";
         let _ = RegexMatcher::new(pattern, 2).unwrap();
 
         let pattern = r"(?P<count>\d+), (?P<name>.+)";
-        let _ = RegexMatcher::new(pattern, vec!["name", "count"]).unwrap();
+        let _ = RegexMatcher::new(pattern, fields).unwrap();
     }
 
     #[test]
     #[should_panic(expected = "Unexpected capture group: \"NO_EXIST\"")]
     fn unexpected_field_should_fail() {
         let pattern = r"(?P<count>\d+), (?P<NO_EXIST>.+)";
-        let _ = RegexMatcher::new(pattern, vec!["name", "count"]).unwrap();
+        let fields: &[&str] = &["name", "count"];
+        let _ = RegexMatcher::new(pattern, fields).unwrap();
     }
 }
