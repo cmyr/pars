@@ -42,7 +42,7 @@ enum Mode {
     Regex(AttributeArgs),
 }
 
-/// Returns the format/re string, e.g. for #[pars::fmt("my string")] returns
+/// Attempt to generate an implementation of `ParsFromStr` using a regex pattern.
 #[proc_macro_attribute]
 pub fn re(attr: TokenStream1, tokens: TokenStream1) -> TokenStream1 {
     let args = parse_macro_input!(attr as AttributeArgs);
@@ -54,6 +54,7 @@ pub fn re(attr: TokenStream1, tokens: TokenStream1) -> TokenStream1 {
     generate_impls(mode, &container).unwrap_or_else(to_compile_errors).into()
 }
 
+/// Attempt to generate an implementation of `ParsFromStr` using a format string.
 #[proc_macro_attribute]
 pub fn fmt(attr: TokenStream1, tokens: TokenStream1) -> TokenStream1 {
     let args = parse_macro_input!(attr as AttributeArgs);

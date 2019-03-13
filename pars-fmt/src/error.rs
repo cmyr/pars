@@ -50,7 +50,7 @@ impl fmt::Display for FormatError {
 }
 
 /// Errors that can occur during parsing.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum MatchError<'a> {
     MatchFailed,
     MissingSeparator { idx: usize, string: &'a str },

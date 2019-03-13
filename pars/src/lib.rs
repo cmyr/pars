@@ -5,7 +5,7 @@
 //! This is intended to provide functionality akin to the built in
 //! `FromStr` trait.
 //!
-//! The main type in this crate is the [`ParsFromStr`] trait, which
+//! The main type in this crate is the [`ParsFromStr`](trait.ParsFromStr.html) trait, which
 //! should not be implemented directly; it is automatically generated
 //! by the procedural macros described below.
 //!
@@ -26,8 +26,8 @@
 //!     width: u32,
 //!     height: u32,
 //! }
-//!
-//! let Rect { x, y, width, height } = Rect::pars_from_str("Rect((0, 3), (20, 22))").unwrap();
+//! let example = "Rect((0, 3), (20, 22))";
+//! let Rect { x, y, width, height } = Rect::pars_from_str(example).unwrap();
 //! assert_eq!((x, y, width, height), (0, 3, 20, 22));
 //! ```
 //!
@@ -120,11 +120,15 @@
 #[allow(unused_imports)]
 #[macro_use]
 extern crate pars_derive;
-#[doc(hidden)]
-pub use pars_derive::*;
+pub use pars_derive::{fmt, re};
 pub use pars_fmt::*;
 
+/// A trait like `FromStr`.
+///
+/// You should not implement this trait directly, but rather through
+/// the macros described elsewhere in this documentation.
 pub trait ParsFromStr: Sized {
+    /// Attempt to generate an instance of `Self` from the provided `&str`.
     fn pars_from_str(s: &str) -> Result<Self, MatchError<'static>>;
 }
 

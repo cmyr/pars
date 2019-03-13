@@ -30,6 +30,7 @@ use std::ops::Range;
 use crate::common::Fields;
 use crate::error::{FormatError, MatchError};
 
+/// State, internal to the parser
 #[derive(Debug)]
 enum State {
     Ready,
@@ -54,6 +55,7 @@ impl Token {
     }
 }
 
+/// A simple state-based parser for our custom format syntax.
 struct Parser<'a> {
     source: &'a str,
     pos: usize,
@@ -223,15 +225,21 @@ impl<'a> Parser<'a> {
     }
 }
 
+/// A parsed format string and information needed to match it against
+/// a given struct.
+#[doc(hidden)]
 pub struct FmtMatcher<'a> {
     source: &'a str,
     lead_separator: Option<Range<usize>>,
     //NOTE: we represent all substrings as ranges of self.source, to avoid
     //any unnecessary allocation.
+    /// Each tuple represents the name of a field and its delineating separator.
     fmt_fields: Vec<(Range<usize>, Range<usize>)>,
+    /// The fields of the destination struct.
     fields: Fields<'a>,
 }
 
+#[doc(hidden)]
 #[allow(dead_code)]
 pub struct FmtMatch<'a, 'b> {
     matcher: &'a FmtMatcher<'a>,

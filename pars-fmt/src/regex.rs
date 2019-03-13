@@ -4,7 +4,8 @@ use crate::common::Fields;
 use crate::error::{FormatError, MatchError};
 use regex::{Captures, Regex};
 
-#[allow(dead_code)]
+/// A compiled regex pattern, and related metadata.
+#[doc(hidden)]
 pub struct RegexMatcher<'a> {
     source: &'a str,
     pattern: Regex,
@@ -12,11 +13,14 @@ pub struct RegexMatcher<'a> {
     pat_has_names: bool,
 }
 
+/// The result of a successful match.
+///
+/// The second field is the original source string. This is hacky; we hold
+/// on to it so that we have a valid lifetime when constructing `MatchError`s.
+#[doc(hidden)]
 pub struct RegexMatch<'a, 'b>(pub Captures<'b>, &'a str);
 
 impl<'a> RegexMatcher<'a> {
-    //TODO: this is a hack, it's complicated, i'll delete it, probably
-    #[doc(hidden)]
     pub fn new_unnamed(string: &'a str, num_fields: usize) -> Result<Self, FormatError> {
         let fields = Fields::Unnamed(num_fields);
         Self::new(string, fields)
