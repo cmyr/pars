@@ -105,6 +105,21 @@ impl<'a> Data<'a> {
             Data::Struct(_, ref fields) => fields.len(),
         }
     }
+
+    pub fn to_field_names(&self) -> Option<Vec<String>> {
+        let names = self
+            .all_fields()
+            .filter_map(|f| match &f.member {
+                syn::Member::Named(ident) => Some(ident.to_string()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        if names.is_empty() {
+            None
+        } else {
+            Some(names)
+        }
+    }
 }
 
 fn enum_from_ast<'a>(

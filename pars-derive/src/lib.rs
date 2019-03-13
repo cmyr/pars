@@ -178,30 +178,23 @@ fn generate_re_block(
 ) -> Result<TokenStream, Vec<syn::Error>> {
     let re_string = get_attr_string(attrs).map_err(|e| vec![e])?;
     let num_fields = cont.data.num_fields();
-    let field_names = cont
-        .data
-        .all_fields()
-        .filter_map(|f| match &f.member {
-            syn::Member::Named(ident) => Some(ident.to_string()),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
+    let field_names = cont.data.to_field_names();
+    let field_names =
+        field_names.as_ref().map(|v| v.iter().map(|s| s.as_str()).collect::<Vec<_>>());
 
-    let pattern = if field_names.is_empty() {
-        pars_fmt::RegexMatcher::new_unnamed(&re_string, num_fields)
-    } else {
-        pars_fmt::RegexMatcher::new(&re_string, field_names.clone())
+    let pattern = match field_names.as_ref() {
+        Some(ref names) => pars_fmt::RegexMatcher::new(&re_string, names.as_slice()),
+        None => pars_fmt::RegexMatcher::new_unnamed(&re_string, num_fields),
     };
 
     let pattern = pattern.map_err(|e| vec![syn::Error::new(Span::call_site(), e.to_string())])?;
-    let field_names = gen_static_array(field_names.as_slice());
+    let field_names = gen_static_array(&field_names.clone().unwrap_or_default());
     let position_mapping = gen_static_array(&pattern.make_position_mapping());
 
     let re_block = quote! {
 
         let position_mapping = #position_mapping;
-        let field_names = #field_names;
-        let field_names = field_names.to_vec();
+        let field_names: &[&str] = &#field_names;
         let mut ordered_matches = [""; #num_fields];
 
         static INSTANCE: ::pars::OnceCell<::pars::RegexMatcher> = ::pars::OnceCell::INIT;
@@ -227,7 +220,6 @@ fn generate_re_block(
     Ok(re_block)
 }
 
-#[allow(unused_variables)]
 fn generate_fmt_block(
     attrs: &AttributeArgs,
     cont: &Container,
@@ -236,22 +228,15 @@ fn generate_fmt_block(
         panic!("pars::fmt only works with structs");
     }
 
-    let field_names = cont
-        .data
-        .all_fields()
-        .filter_map(|f| match &f.member {
-            syn::Member::Named(ident) => Some(ident.to_string()),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
     let fmt_string = get_attr_string(attrs).map_err(|e| vec![e])?;
     let num_fields = cont.data.num_fields();
+    let field_names = cont.data.to_field_names().unwrap_or_default();
+    let field_names = field_names.iter().map(|s| s.as_str()).collect::<Vec<_>>();
 
     // check that the fmt string is valid
-    let matcher = ::pars_fmt::FmtMatcher::new(&fmt_string, field_names.as_slice())
+    let matcher = ::pars_fmt::FmtMatcher::new_named(&fmt_string, field_names.as_slice())
         .map_err(|e| vec![syn::Error::new(Span::call_site(), e)])?;
 
-    let field_names = gen_static_array(field_names.as_slice());
     let lead_separator = matcher.get_lead_separator_str();
     let separator_indices = gen_static_array_2tuple(&matcher.make_separator_indices());
 
