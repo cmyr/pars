@@ -20,37 +20,6 @@
 //!     y: f64,
 //! }
 //! ```
-//!
-//! ## Regex variant
-//!
-//! Given input like "home: (56.43, -13.23)"
-//!
-//! ```ignore
-//! #[pars::re(r"(\w+): \((.*), (.*)\)")]
-//! struct NamedPosition {
-//!     name: String,
-//!     x: f64,
-//!     y: f64,
-//! }
-//! ```
-//!
-//! Given input like "unit", "struct hello 5", "tuple hello 4"
-//!
-//! ```ignore
-//! #[pars::fmt("#_: (#type)")] // sketchy af
-//! #[pars::re(fn = ThreeKinds::get_type)]
-//! #[pars::re(r"(\w_).*"), Uppercase]
-//! enum ThreeKinds {
-//!     Unit,
-//!     #[pars(re(r"\w+ (\w+) (\w+)")]
-//!     Struct {
-//!        name: String,
-//!        size: usize,
-//!     },
-//!     #[pars(re(r"\w+ (\w+) (\w+)")]
-//!     Tuple(String, usize),
-//! }
-//! ```
 
 #![recursion_limit = "256"]
 
