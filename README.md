@@ -65,7 +65,7 @@ assert_eq!((name.as_str(), x, y), ("Home", 42.4, -555.111));
 
 ### Tuple struct:
 
-```
+```rust
  use pars::ParsFromStr;
 
 #[pars::fmt("(#{x}, #{y})")] // alternatively: #[pars::fmt("(#{_}, #{_})")]
@@ -78,7 +78,7 @@ assert_eq!((point.0, point.1), (42.4, -5));
 
 ### Regex:
 
-```
+```rust
 use pars::ParsFromStr;
 
 let sample_input = ["colin daniels 55", "casimir faithful ndolo 4"];
